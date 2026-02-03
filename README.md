@@ -2,6 +2,8 @@
 
 Automated Instagram content generator for Real Health Kombucha, creating Reels and Feed posts from organized local assets.
 
+**Repository**: [https://github.com/roel-heremans/Kombucha](https://github.com/roel-heremans/Kombucha)
+
 ## Features
 
 - **Theme-based Asset Organization**: Organize photos, videos, and PDFs by themes (e.g., "Kombucha Benefits", "Kombucha Research")
