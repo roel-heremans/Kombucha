@@ -1,0 +1,61 @@
+brand:
+  name: Real Health Kombucha
+  website: https://www.realhealthkombucha.com/
+  colors:
+    primary: "#1a5f3f"
+    secondary: "#8bc34a"
+    accent: "#4caf50"
+    text: "#333333"
+    background: "#ffffff"
+  fonts:
+    heading: Arial
+    body: Arial
+    weights:
+      heading: bold
+      body: normal
+
+themes:
+  - name: kombucha_benefits
+    target_audience:
+      - health_conscious
+      - restaurants
+    hashtags:
+      base:
+        - "#kombucha"
+        - "#madeira"
+        - "#healthy"
+        - "#realhealthkombucha"
+      custom:
+        - "#kombuchamadeira"
+        - "#saude"
+        - "#madeiraisland"
+  - name: kombucha_research
+    target_audience:
+      - health_conscious
+      - restaurants
+    hashtags:
+      base:
+        - "#kombucha"
+        - "#madeira"
+        - "#research"
+        - "#realhealthkombucha"
+      custom:
+        - "#kombucharesearch"
+        - "#saude"
+        - "#ciencia"
+
+ai:
+  provider: openai
+  model: gpt-4
+  language: pt
+
+instagram:
+  feed_dimensions:
+    width: 1080
+    height: 1080
+  reel_dimensions:
+    width: 1080
+    height: 1920
+  reel_duration:
+    min: 15
+    max: 90
