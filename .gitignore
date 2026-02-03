@@ -39,7 +39,7 @@ output/**/*
 !output/.gitkeep
 
 # Assets (optional - uncomment if you don't want to track assets)
-# assets/**/*
+assets/**/*
 
 # OS
 .DS_Store
