@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 import textwrap
+import re
 from .utils import load_config, get_brand_colors, get_brand_fonts
 
 
@@ -51,17 +52,41 @@ class ImageProcessor:
         Returns:
             PIL Font object.
         """
+        # Clean font name - remove invalid characters and CSS variables
+        if font_name:
+            font_name = re.sub(r'var\([^)]+\)', '', font_name)
+            font_name = re.sub(r'--[a-zA-Z0-9-]+', '', font_name)
+            font_name = re.sub(r'[{}:;]', '', font_name)
+            font_name = font_name.strip()
+            # Extract first valid font name if comma-separated
+            if ',' in font_name:
+                font_name = font_name.split(',')[0].strip()
+        
+        # Validate font name - if invalid, use default
+        if (not font_name or 
+            len(font_name) > 50 or 
+            '{' in font_name or 
+            '}' in font_name or 
+            font_name.startswith('rgb') or
+            'placeholder' in font_name.lower() or
+            'var(' in font_name.lower()):
+            font_name = 'Arial'
+        
         try:
             # Try to load the specified font
             if bold:
                 font_paths = [
                     f"/usr/share/fonts/truetype/{font_name.lower()}-bold.ttf",
                     f"/usr/share/fonts/truetype/{font_name.lower()}-Bold.ttf",
+                    f"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    f"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
                     f"/System/Library/Fonts/{font_name}.ttc",
                 ]
             else:
                 font_paths = [
                     f"/usr/share/fonts/truetype/{font_name.lower()}.ttf",
+                    f"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    f"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
                     f"/System/Library/Fonts/{font_name}.ttc",
                 ]
             
@@ -69,10 +94,41 @@ class ImageProcessor:
                 if Path(font_path).exists():
                     return ImageFont.truetype(font_path, size)
             
-            # Fallback to default font
+            # Try common system fonts
+            common_fonts = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            ]
+            
+            for font_path in common_fonts:
+                if Path(font_path).exists():
+                    return ImageFont.truetype(font_path, size)
+            
+            # Last resort: use a scalable default font
+            # ImageFont.load_default() doesn't scale, so we'll try to find any truetype font
+            # Search in common font directories
+            font_dirs = [
+                "/usr/share/fonts/truetype/dejavu",
+                "/usr/share/fonts/truetype/liberation",
+                "/usr/share/fonts/TTF",
+                "/System/Library/Fonts",
+            ]
+            
+            for font_dir in font_dirs:
+                font_dir_path = Path(font_dir)
+                if font_dir_path.exists():
+                    # Look for any .ttf file
+                    ttf_files = list(font_dir_path.glob("*.ttf"))
+                    if ttf_files:
+                        return ImageFont.truetype(str(ttf_files[0]), size)
+            
+            # If all else fails, use default but warn
+            print(f"Warning: Could not load scalable font, using default (size may not be accurate)")
             return ImageFont.load_default()
         
-        except Exception:
+        except Exception as e:
+            print(f"Warning: Font loading error: {e}, using default")
             return ImageFont.load_default()
     
     def create_text_overlay(
@@ -81,8 +137,9 @@ class ImageProcessor:
         text: str,
         position: str = 'bottom',
         max_width: Optional[int] = None,
-        font_size: int = 48,
-        padding: int = 40
+        font_size: int = 20,
+        padding: int = 40,
+        left_padding: Optional[int] = None
     ) -> Image.Image:
         """
         Add text overlay to image.
@@ -98,21 +155,104 @@ class ImageProcessor:
         Returns:
             Image with text overlay.
         """
+        # Set left padding - use provided value or default to larger value for right alignment
+        if left_padding is None:
+            left_padding = padding * 3  # Default to 3x padding for more right positioning
+        else:
+            left_padding = left_padding
+        
         if max_width is None:
+            # Since we're centering text, use full width minus padding on both sides
             max_width = image.width - (padding * 2)
         
-        # Load font
+        # Load font - ensure we get a scalable font for proper sizing
         font = self.load_font(
             self.brand_fonts.get('heading', 'Arial'),
             font_size,
             bold=True
         )
         
-        # Wrap text
+        # Verify font size is being applied (for debugging)
+        # If using default font, it won't scale properly
+        if hasattr(font, 'size') and font.size != font_size:
+            # Try to reload with explicit size if possible
+            pass
+        
+        # Split text by sentences and commas first, then wrap if needed
         wrapped_lines = []
-        for line in text.split('\n'):
-            wrapped = textwrap.wrap(line, width=max_width // (font_size // 2))
-            wrapped_lines.extend(wrapped)
+        
+        # First, split by commas (but keep the comma with the preceding part)
+        # This creates natural breaks for phrases
+        comma_split = re.split(r'(,\s*)', text)
+        # Recombine commas with their preceding text
+        comma_parts = []
+        for i in range(0, len(comma_split) - 1, 2):
+            if i + 1 < len(comma_split):
+                comma_parts.append(comma_split[i] + comma_split[i + 1])
+            else:
+                comma_parts.append(comma_split[i])
+        if len(comma_split) % 2 == 1:
+            comma_parts.append(comma_split[-1])
+        
+        # Now split each comma-separated part by sentence boundaries
+        all_parts = []
+        for part in comma_parts:
+            # Split by sentence boundaries (periods, exclamation, question marks)
+            sentence_pattern = r'([^.!?]+[.!?]+(?:\s+|$))'
+            sentences = re.findall(sentence_pattern, part)
+            
+            if sentences:
+                all_parts.extend(sentences)
+            else:
+                # If no sentence boundaries, check if this part ends with a period
+                if part.strip().endswith('.'):
+                    all_parts.append(part)
+                else:
+                    # Split by periods only
+                    period_split = re.split(r'(\.\s+)', part)
+                    combined = []
+                    for i in range(0, len(period_split) - 1, 2):
+                        if i + 1 < len(period_split):
+                            combined.append(period_split[i] + period_split[i + 1])
+                        else:
+                            combined.append(period_split[i])
+                    if len(period_split) % 2 == 1:
+                        combined.append(period_split[-1])
+                    all_parts.extend([c for c in combined if c.strip()])
+        
+        # Filter out empty parts and strip whitespace
+        all_parts = [s.strip() for s in all_parts if s.strip()]
+        
+        # If still no parts found, use original text
+        if not all_parts:
+            all_parts = [text]
+        
+        # Use all_parts as sentences for wrapping
+        sentences = all_parts
+        
+        # Wrap each sentence (split long sentences if needed)
+        # Use a more accurate character width estimation
+        # Average character width is approximately font_size * 0.5-0.6 for most fonts
+        # Use a conservative estimate to ensure proper wrapping
+        avg_char_width = font_size * 0.55
+        chars_per_line = max(30, int(max_width / avg_char_width)) if avg_char_width > 0 else 50
+        
+        for sentence in sentences:
+            # Always wrap sentences to ensure proper line breaking
+            # Use textwrap which handles word boundaries properly
+            # break_long_words=False ensures we break at word boundaries
+            wrapped = textwrap.wrap(
+                sentence, 
+                width=chars_per_line, 
+                break_long_words=False, 
+                break_on_hyphens=False,
+                expand_tabs=False
+            )
+            if wrapped:
+                wrapped_lines.extend(wrapped)
+            else:
+                # If wrapping fails, add the sentence as-is
+                wrapped_lines.append(sentence)
         
         # Calculate text dimensions
         draw = ImageDraw.Draw(image)
@@ -138,18 +278,29 @@ class ImageProcessor:
         text_color = self.hex_to_rgb(self.brand_colors.get('text', '#000000'))
         bg_color = self.hex_to_rgb(self.brand_colors.get('background', '#ffffff'))
         
-        # Draw background rectangle
+        # Draw background rectangle - center it horizontally
         rect_y1 = max(0, y_start - padding // 2)
         rect_y2 = min(image.height, y_start + total_height + padding // 2)
+        # Calculate max line width to center the background rectangle
+        max_line_width = 0
+        for line in wrapped_lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_width = bbox[2] - bbox[0]
+            max_line_width = max(max_line_width, line_width)
+        rect_x1 = (image.width - max_line_width) // 2 - padding
+        rect_x2 = (image.width + max_line_width) // 2 + padding
         overlay_draw.rectangle(
-            [(padding // 2, rect_y1), (image.width - padding // 2, rect_y2)],
+            [(rect_x1, rect_y1), (rect_x2, rect_y2)],
             fill=(*bg_color, 200)  # Semi-transparent
         )
         
-        # Draw text
+        # Draw text - center each line horizontally
         y_offset = y_start
         for i, line in enumerate(wrapped_lines):
-            x = padding
+            # Calculate text width to center it horizontally
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_width = bbox[2] - bbox[0]
+            x = (image.width - line_width) // 2  # Center horizontally
             overlay_draw.text((x, y_offset), line, font=font, fill=(*text_color, 255))
             y_offset += line_heights[i] + 10
         
@@ -162,7 +313,8 @@ class ImageProcessor:
         image_path: Path,
         output_path: Path,
         text_overlay: Optional[str] = None,
-        text_position: str = 'bottom'
+        text_position: str = 'bottom',
+        font_size: int = 20
     ) -> Path:
         """
         Process an image for Instagram feed post.
@@ -197,7 +349,14 @@ class ImageProcessor:
         
         # Add text overlay if provided
         if text_overlay:
-            new_img = self.create_text_overlay(new_img, text_overlay, text_position)
+            # Use larger left padding to position text more to the right
+            new_img = self.create_text_overlay(
+                new_img, 
+                text_overlay, 
+                text_position, 
+                font_size=font_size,
+                left_padding=120  # Start text more to the right
+            )
         
         # Save
         output_path.parent.mkdir(parents=True, exist_ok=True)

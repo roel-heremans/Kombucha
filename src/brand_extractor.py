@@ -81,9 +81,13 @@ class BrandExtractor:
             
             # Find RGBA colors
             rgba_matches = re.findall(rgba_pattern, css)
-            for r, g, b, _ in rgba_matches:
-                color = f"#{int(r):02x}{int(g):02x}{int(b):02x}"
-                found_colors.add(color.lower())
+            for match in rgba_matches:
+                # Handle both RGB (3 values) and RGBA (4 values) cases
+                if isinstance(match, tuple):
+                    if len(match) >= 3:
+                        r, g, b = match[0], match[1], match[2]
+                        color = f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+                        found_colors.add(color.lower())
         
         # Try to identify primary colors by frequency and common patterns
         color_list = list(found_colors)
@@ -169,8 +173,16 @@ class BrandExtractor:
                 font = match.strip().strip('"\'')
                 if ',' in font:
                     font = font.split(',')[0].strip()
-                if font and font not in found_fonts:
-                    found_fonts.append(font)
+                # Remove CSS variables and invalid characters
+                font = re.sub(r'var\([^)]+\)', '', font)
+                font = re.sub(r'--[a-zA-Z0-9-]+', '', font)
+                font = re.sub(r'[{}:;]', '', font)
+                font = font.strip()
+                # Only add if it's a valid font name (not empty, no special chars, reasonable length)
+                if font and len(font) < 50 and font not in found_fonts and not font.startswith('rgb'):
+                    # Filter out common generic fonts that are too generic
+                    if font.lower() not in ['inherit', 'initial', 'unset']:
+                        found_fonts.append(font)
             
             # Extract font weights for headings
             if 'h1' in css or 'h2' in css or 'heading' in css.lower():
@@ -180,15 +192,30 @@ class BrandExtractor:
                     if 'bold' in weight.lower() or weight.isdigit() and int(weight) >= 600:
                         fonts['weights']['heading'] = 'bold'
         
-        # Assign fonts
-        if found_fonts:
-            fonts['heading'] = found_fonts[0]
-            fonts['body'] = found_fonts[0] if len(found_fonts) == 1 else found_fonts[-1]
+        # Filter and clean found fonts - remove invalid ones
+        valid_fonts = []
+        for font in found_fonts:
+            # Check if font name is valid (no special chars, reasonable length, not CSS code)
+            if (font and 
+                len(font) < 50 and 
+                len(font) > 0 and
+                not font.startswith('rgb') and
+                not font.startswith('var(') and
+                not '{' in font and
+                not '}' in font and
+                not '--' in font and
+                font.replace(' ', '').replace('-', '').isalnum()):
+                valid_fonts.append(font)
         
-        # Default fonts if not found
-        if not fonts['heading']:
+        # Assign fonts
+        if valid_fonts:
+            fonts['heading'] = valid_fonts[0]
+            fonts['body'] = valid_fonts[0] if len(valid_fonts) == 1 else valid_fonts[-1]
+        
+        # Default fonts if not found or invalid
+        if not fonts['heading'] or not fonts['heading'].replace(' ', '').replace('-', '').isalnum():
             fonts['heading'] = 'Arial'
-        if not fonts['body']:
+        if not fonts['body'] or not fonts['body'].replace(' ', '').replace('-', '').isalnum():
             fonts['body'] = 'Arial'
         
         return fonts

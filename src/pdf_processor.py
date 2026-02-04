@@ -29,11 +29,12 @@ class PDFProcessor:
         Find all PDF files in a theme directory.
         
         Args:
-            theme_name: Name of the theme directory.
+            theme_name: Name of the theme directory (e.g., '04_immune_system').
         
         Returns:
             List of PDF file paths.
         """
+        # PDFs are in assets/[theme]/pdfs/ subfolder
         theme_path = self.assets_base_path / theme_name / 'pdfs'
         if not theme_path.exists():
             return []

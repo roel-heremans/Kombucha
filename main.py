@@ -23,7 +23,7 @@ def cli():
 
 
 @cli.command()
-@click.option('--theme', '-t', required=True, help='Theme name (e.g., kombucha_benefits)')
+@click.option('--theme', '-t', required=True, help='Theme name (e.g., 04_immune_system, 05_kombucha_benefits)')
 @click.option('--type', '-T', type=click.Choice(['feed', 'reel'], case_sensitive=False),
               required=True, help='Content type: feed or reel')
 @click.option('--image', '-i', type=click.Path(exists=True), help='Specific image file to use (for feed posts)')
@@ -31,7 +31,10 @@ def cli():
               help='Specific video files to use (for reels, can specify multiple)')
 @click.option('--music', '-m', type=click.Path(exists=True), help='Background music file for reels')
 @click.option('--no-pdf', is_flag=True, help='Skip PDF content extraction')
-def generate(theme, type, image, videos, music, no_pdf):
+@click.option('--use-quote', is_flag=True, help='Use a quote from the quotes collection (creates quote card or adds as overlay)')
+@click.option('--combined', is_flag=True, help='Create combined reel with video + image + quote + health benefit')
+@click.option('--llm-refine', is_flag=True, help='Use LLM to refine health benefit text (makes it more digestible and engaging)')
+def generate(theme, type, image, videos, music, no_pdf, use_quote, combined, llm_refine):
     """Generate Instagram content (feed post or reel)."""
     try:
         generator = ContentGenerator()
@@ -44,7 +47,8 @@ def generate(theme, type, image, videos, music, no_pdf):
             result = generator.generate_feed_post(
                 theme,
                 image_path=image_path,
-                use_pdf_content=not no_pdf
+                use_pdf_content=not no_pdf,
+                use_quote=use_quote
             )
             
             click.echo(f"{Fore.GREEN}✓ Feed post generated successfully!{Style.RESET_ALL}")
@@ -56,13 +60,28 @@ def generate(theme, type, image, videos, music, no_pdf):
             # Generate reel
             video_paths = [Path(v) for v in videos] if videos else None
             music_path = Path(music) if music else None
+            image_path = Path(image) if image else None
             
-            result = generator.generate_reel(
-                theme,
-                video_paths=video_paths,
-                use_pdf_content=not no_pdf,
-                music_path=music_path
-            )
+            if combined:
+                # Generate combined reel with video + image + quote + health benefit
+                image_paths = [image_path] if image_path else None
+                result = generator.generate_combined_reel(
+                    theme,
+                    video_paths=video_paths,
+                    image_paths=image_paths,
+                    use_quote=True,
+                    use_pdf_content=not no_pdf,
+                    use_llm_refinement=llm_refine,
+                    music_path=music_path
+                )
+            else:
+                # Generate regular reel
+                result = generator.generate_reel(
+                    theme,
+                    video_paths=video_paths,
+                    use_pdf_content=not no_pdf,
+                    music_path=music_path
+                )
             
             click.echo(f"{Fore.GREEN}✓ Reel generated successfully!{Style.RESET_ALL}")
             click.echo(f"  Video: {result['video']}")
@@ -186,6 +205,145 @@ def config():
     themes = config_data.get('themes', [])
     for theme in themes:
         click.echo(f"  - {theme.get('name', 'N/A')}")
+
+
+@cli.command()
+@click.option('--feeds', '-f', default=3, type=int, help='Number of feed posts to generate (default: 3)')
+@click.option('--reels', '-r', default=3, type=int, help='Number of reels to generate (default: 3)')
+@click.option('--themes', '-t', multiple=True, help='Specific themes to use (can specify multiple, otherwise uses all available)')
+@click.option('--use-quote', is_flag=True, default=True, help='Use quotes in generated content (default: True)')
+@click.option('--llm-refine', is_flag=True, default=True, help='Use LLM refinement for health benefits (default: True)')
+@click.option('--music', '-m', type=click.Path(exists=True), help='Specific music file to use for all reels (otherwise random)')
+def batch_generate(feeds, reels, themes, use_quote, llm_refine, music):
+    """Generate multiple feed posts and reels in one batch."""
+    import random
+    from pathlib import Path
+    
+    try:
+        generator = ContentGenerator()
+        available_themes = generator.list_themes()
+        
+        if not available_themes:
+            click.echo(f"{Fore.RED}No themes found. Create theme directories in assets/{Style.RESET_ALL}", err=True)
+            exit(1)
+        
+        # Filter themes if specified
+        if themes:
+            themes_to_use = [t for t in themes if t in available_themes]
+            if not themes_to_use:
+                click.echo(f"{Fore.RED}None of the specified themes were found.{Style.RESET_ALL}", err=True)
+                exit(1)
+        else:
+            themes_to_use = available_themes
+        
+        # Get available music files
+        music_files = []
+        music_dir = Path(__file__).parent / 'assets' / '00_music'
+        if music_dir.exists():
+            music_files = list(music_dir.glob('*.mp3'))
+        
+        click.echo(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        click.echo(f"{Fore.CYAN}Batch Content Generation{Style.RESET_ALL}")
+        click.echo(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        click.echo(f"{Fore.YELLOW}Themes: {', '.join(themes_to_use)}{Style.RESET_ALL}")
+        click.echo(f"{Fore.YELLOW}Feed posts: {feeds}{Style.RESET_ALL}")
+        click.echo(f"{Fore.YELLOW}Reels: {reels}{Style.RESET_ALL}")
+        click.echo(f"{Fore.YELLOW}Use quotes: {use_quote}{Style.RESET_ALL}")
+        click.echo(f"{Fore.YELLOW}LLM refinement: {llm_refine}{Style.RESET_ALL}")
+        click.echo(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
+        
+        results = {
+            'feeds': [],
+            'reels': []
+        }
+        
+        # Generate feed posts
+        if feeds > 0:
+            click.echo(f"{Fore.CYAN}Generating {feeds} feed post(s)...{Style.RESET_ALL}")
+            for i in range(feeds):
+                theme = random.choice(themes_to_use)
+                click.echo(f"\n{Fore.YELLOW}[{i+1}/{feeds}] Generating feed post for theme: {theme}{Style.RESET_ALL}")
+                
+                try:
+                    result = generator.generate_feed_post(
+                        theme,
+                        use_pdf_content=True,
+                        use_quote=use_quote
+                    )
+                    results['feeds'].append({
+                        'theme': theme,
+                        'result': result,
+                        'success': True
+                    })
+                    click.echo(f"{Fore.GREEN}  ✓ Success!{Style.RESET_ALL}")
+                    click.echo(f"  Image: {result['image'].name}")
+                except Exception as e:
+                    results['feeds'].append({
+                        'theme': theme,
+                        'error': str(e),
+                        'success': False
+                    })
+                    click.echo(f"{Fore.RED}  ✗ Error: {e}{Style.RESET_ALL}")
+        
+        # Generate reels
+        if reels > 0:
+            click.echo(f"\n{Fore.CYAN}Generating {reels} reel(s)...{Style.RESET_ALL}")
+            for i in range(reels):
+                theme = random.choice(themes_to_use)
+                music_path = Path(music) if music else (random.choice(music_files) if music_files else None)
+                
+                click.echo(f"\n{Fore.YELLOW}[{i+1}/{reels}] Generating reel for theme: {theme}{Style.RESET_ALL}")
+                if music_path:
+                    click.echo(f"  Music: {music_path.name}")
+                
+                try:
+                    result = generator.generate_combined_reel(
+                        theme,
+                        video_paths=None,
+                        image_paths=None,
+                        use_quote=use_quote,
+                        use_pdf_content=True,
+                        use_llm_refinement=llm_refine,
+                        music_path=music_path
+                    )
+                    results['reels'].append({
+                        'theme': theme,
+                        'result': result,
+                        'success': True
+                    })
+                    click.echo(f"{Fore.GREEN}  ✓ Success!{Style.RESET_ALL}")
+                    click.echo(f"  Video: {result['video'].name}")
+                except Exception as e:
+                    results['reels'].append({
+                        'theme': theme,
+                        'error': str(e),
+                        'success': False
+                    })
+                    click.echo(f"{Fore.RED}  ✗ Error: {e}{Style.RESET_ALL}")
+        
+        # Summary
+        click.echo(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        click.echo(f"{Fore.CYAN}Batch Generation Summary{Style.RESET_ALL}")
+        click.echo(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        
+        feeds_success = sum(1 for f in results['feeds'] if f.get('success', False))
+        reels_success = sum(1 for r in results['reels'] if r.get('success', False))
+        
+        click.echo(f"{Fore.GREEN}Feed posts: {feeds_success}/{len(results['feeds'])} successful{Style.RESET_ALL}")
+        click.echo(f"{Fore.GREEN}Reels: {reels_success}/{len(results['reels'])} successful{Style.RESET_ALL}")
+        
+        if feeds_success + reels_success > 0:
+            click.echo(f"\n{Fore.CYAN}Generated content saved to:{Style.RESET_ALL}")
+            click.echo(f"  Feed posts: output/feed_posts/")
+            click.echo(f"  Reels: output/reels/")
+        
+        if feeds_success < len(results['feeds']) or reels_success < len(results['reels']):
+            click.echo(f"\n{Fore.YELLOW}Some items failed. Check errors above.{Style.RESET_ALL}")
+            exit(1)
+    
+    except Exception as e:
+        click.echo(f"{Fore.RED}Batch generation failed: {e}{Style.RESET_ALL}", err=True)
+        exit(1)
 
 
 if __name__ == '__main__':

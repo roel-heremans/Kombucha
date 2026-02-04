@@ -188,6 +188,140 @@ Write in {lang_instruction} language."""
             'cta': 'Experimente nosso kombucha hoje! 🍵'
         }
     
+    def refine_health_benefit(
+        self,
+        raw_text: str,
+        theme_name: str,
+        max_length: int = 200
+    ) -> Dict[str, str]:
+        """
+        Refine health benefit text using LLM to make it more digestible and engaging.
+        
+        Args:
+            raw_text: Raw text extracted from PDFs.
+            theme_name: Name of the theme (e.g., '06_digestive_health').
+            max_length: Maximum character length for refined text (default 200).
+        
+        Returns:
+            Dictionary with 'pt' and 'en' keys containing refined text in both languages.
+            If LLM is unavailable, returns original text in both languages.
+        """
+        if not self.client:
+            # Fallback: return original text in both languages
+            return {
+                'pt': raw_text[:max_length] if len(raw_text) > max_length else raw_text,
+                'en': raw_text[:max_length] if len(raw_text) > max_length else raw_text
+            }
+        
+        # Get theme context for better refinement
+        theme_config = get_theme_config(self.config, theme_name)
+        theme_display_name = theme_name.replace('_', ' ').title() if theme_config is None else theme_name
+        
+        # Truncate raw text if too long (keep context but limit input)
+        context_text = raw_text[:1500] if len(raw_text) > 1500 else raw_text
+        
+        # Build prompt for refinement
+        prompt = f"""You are an expert in translating scientific research into accessible, engaging health information for the general public.
+
+Extract and refine a health benefit fact about kombucha from the following research text. Transform it into clear, easy-to-understand language that includes a lesser-known scientific fact or research finding.
+
+Research Text:
+{context_text}
+
+Theme: {theme_display_name}
+
+Requirements:
+1. Write 1-2 clear, engaging sentences (100-200 characters total)
+2. Include a specific, lesser-known scientific fact or research finding
+3. Make it accessible to non-scientific audiences
+4. Maintain scientific accuracy
+5. Make it compelling and interesting
+
+Provide your response in this exact format:
+PORTUGUESE: [refined text in Portuguese, 100-200 characters]
+ENGLISH: [refined text in English, 100-200 characters]
+
+Focus on making the information digestible while highlighting something interesting that most people don't know about kombucha's health benefits."""
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        'role': 'system',
+                        'content': 'You are an expert in translating scientific research into accessible health information. You specialize in making complex scientific findings clear, engaging, and interesting for general audiences.'
+                    },
+                    {
+                        'role': 'user',
+                        'content': prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=300
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            # Parse the response to extract Portuguese and English versions
+            refined = self._parse_refined_benefit(result_text, raw_text, max_length)
+            return refined
+        
+        except Exception as e:
+            print(f"Warning: Could not refine health benefit with LLM: {e}")
+            # Fallback: return original text truncated to max_length
+            truncated = raw_text[:max_length] if len(raw_text) > max_length else raw_text
+            return {
+                'pt': truncated,
+                'en': truncated
+            }
+    
+    def _parse_refined_benefit(
+        self,
+        response: str,
+        fallback_text: str,
+        max_length: int
+    ) -> Dict[str, str]:
+        """
+        Parse LLM response to extract Portuguese and English versions.
+        
+        Args:
+            response: LLM response text.
+            fallback_text: Original text to use if parsing fails.
+            max_length: Maximum length for refined text.
+        
+        Returns:
+            Dictionary with 'pt' and 'en' keys.
+        """
+        result = {
+            'pt': fallback_text[:max_length] if len(fallback_text) > max_length else fallback_text,
+            'en': fallback_text[:max_length] if len(fallback_text) > max_length else fallback_text
+        }
+        
+        # Extract Portuguese version
+        if 'PORTUGUESE:' in response:
+            pt_part = response.split('PORTUGUESE:')[1]
+            if 'ENGLISH:' in pt_part:
+                pt_text = pt_part.split('ENGLISH:')[0].strip()
+            else:
+                pt_text = pt_part.strip()
+            
+            # Clean up and validate
+            pt_text = pt_text.strip('"\'')
+            if len(pt_text) > 0 and len(pt_text) <= max_length + 50:  # Allow slight overflow
+                result['pt'] = pt_text[:max_length] if len(pt_text) > max_length else pt_text
+        
+        # Extract English version
+        if 'ENGLISH:' in response:
+            en_part = response.split('ENGLISH:')[1].strip()
+            en_text = en_part.split('\n')[0].strip()  # Take first line only
+            
+            # Clean up and validate
+            en_text = en_text.strip('"\'')
+            if len(en_text) > 0 and len(en_text) <= max_length + 50:  # Allow slight overflow
+                result['en'] = en_text[:max_length] if len(en_text) > max_length else en_text
+        
+        return result
+    
     def format_caption_for_instagram(self, caption_data: Dict[str, str]) -> str:
         """
         Format caption data into Instagram-ready text.

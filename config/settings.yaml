@@ -1,54 +1,148 @@
 brand:
-  name: Real Health Kombucha
+  name: HOME - Real Health Kombucha Madeira
   website: https://www.realhealthkombucha.com/
   colors:
-    primary: "#1a5f3f"
-    secondary: "#8bc34a"
-    accent: "#4caf50"
-    text: "#333333"
-    background: "#ffffff"
+    primary: '#ec5600'
+    secondary: '#2c2f24'
+    accent: '#dbdfd0'
+    text: '#000000'
+    background: '#ffffff'
   fonts:
-    heading: Arial
-    body: Arial
+    heading: Alegreya
+    body: Inter Display Placeholder
     weights:
       heading: bold
       body: normal
-
 themes:
-  - name: kombucha_benefits
-    target_audience:
-      - health_conscious
-      - restaurants
-    hashtags:
-      base:
-        - "#kombucha"
-        - "#madeira"
-        - "#healthy"
-        - "#realhealthkombucha"
-      custom:
-        - "#kombuchamadeira"
-        - "#saude"
-        - "#madeiraisland"
-  - name: kombucha_research
-    target_audience:
-      - health_conscious
-      - restaurants
-    hashtags:
-      base:
-        - "#kombucha"
-        - "#madeira"
-        - "#research"
-        - "#realhealthkombucha"
-      custom:
-        - "#kombucharesearch"
-        - "#saude"
-        - "#ciencia"
-
+- name: kombucha_benefits
+  target_audience:
+  - health_conscious
+  - restaurants
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#healthy'
+    - '#realhealthkombucha'
+    custom:
+    - '#kombuchamadeira'
+    - '#saude'
+    - '#madeiraisland'
+- name: kombucha_research
+  target_audience:
+  - health_conscious
+  - restaurants
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#research'
+    - '#realhealthkombucha'
+    custom:
+    - '#kombucharesearch'
+    - '#saude'
+    - '#ciencia'
+- name: digestive_health
+  target_audience:
+  - health_conscious
+  - yoga_community
+  - restaurants
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#digestivehealth'
+    - '#realhealthkombucha'
+    custom:
+    - '#guthealth'
+    - '#probiotics'
+    - '#saude'
+    - '#yogamadeira'
+- name: immune_system
+  target_audience:
+  - health_conscious
+  - yoga_community
+  - restaurants
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#immunesystem'
+    - '#realhealthkombucha'
+    custom:
+    - '#antioxidants'
+    - '#wellness'
+    - '#saude'
+    - '#healthymadeira'
+- name: yoga_wellness
+  target_audience:
+  - yoga_community
+  - health_conscious
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#yoga'
+    - '#realhealthkombucha'
+    custom:
+    - '#yogamadeira'
+    - '#wellness'
+    - '#yogalife'
+    - '#postyoga'
+    - '#yogaretreat'
+- name: madeira_local
+  target_audience:
+  - restaurants
+  - local_madeira
+  - tourists
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#realhealthkombucha'
+    custom:
+    - '#madeiraisland'
+    - '#madeiralocal'
+    - '#madeirafood'
+    - '#restaurantmadeira'
+    - '#supportlocal'
+- name: yoga_retreats
+  target_audience:
+  - yoga_community
+  - wellness_seekers
+  - tourists
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#yogaretreat'
+    - '#realhealthkombucha'
+    custom:
+    - '#yogamadeira'
+    - '#wellnessretreat'
+    - '#yogalife'
+    - '#madeiraretreat'
+    - '#yogawellness'
+- name: kombucha_quotes
+  target_audience:
+  - health_conscious
+  - yoga_community
+  - restaurants
+  hashtags:
+    base:
+    - '#kombucha'
+    - '#madeira'
+    - '#quotes'
+    - '#realhealthkombucha'
+    custom:
+    - '#inspiration'
+    - '#wellness'
+    - '#motivation'
+    - '#healthquotes'
 ai:
   provider: openai
   model: gpt-4
-  language: pt
-
+  language: en
 instagram:
   feed_dimensions:
     width: 1080
