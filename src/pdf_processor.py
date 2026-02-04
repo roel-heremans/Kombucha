@@ -2,8 +2,10 @@
 PDF Processor Module
 
 Extracts text content from PDFs in theme directories for use in content generation.
+Can also load preprocessed JSON files for faster access.
 """
 
+import json
 import pdfplumber
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -168,6 +170,110 @@ class PDFProcessor:
             'word_count': len(combined_text.split()),
             'character_count': len(combined_text)
         }
+    
+    def load_processed_content(self, theme_name: str) -> Optional[Dict]:
+        """
+        Load preprocessed content from JSON file if it exists.
+        
+        Args:
+            theme_name: Name of the theme directory.
+        
+        Returns:
+            Dictionary with processed content, or None if JSON doesn't exist.
+        """
+        json_path = self.assets_base_path / theme_name / 'content.json'
+        if json_path.exists():
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading JSON for {theme_name}: {e}")
+                return None
+        return None
+    
+    def get_key_points_from_json(self, theme_name: str, max_points: Optional[int] = None) -> List[str]:
+        """
+        Get key points from preprocessed JSON file, or extract from PDFs if JSON doesn't exist.
+        
+        Args:
+            theme_name: Name of the theme directory.
+            max_points: Optional limit on number of key points to return.
+        
+        Returns:
+            List of key points (already refined and accessible).
+        """
+        processed_content = self.load_processed_content(theme_name)
+        if processed_content and 'summary' in processed_content:
+            key_points = processed_content['summary'].get('combined_key_points', [])
+            if max_points:
+                return key_points[:max_points]
+            return key_points
+        
+        # Fallback to processing PDFs
+        combined_text = self.get_combined_text(theme_name)
+        return self.extract_key_points(combined_text, max_points=max_points or 5)
+    
+    def get_random_key_point_from_json(self, theme_name: str) -> Optional[str]:
+        """
+        Get a random refined key point from JSON for variety in content generation.
+        
+        Args:
+            theme_name: Name of the theme directory.
+        
+        Returns:
+            A random key point string, or None if not available.
+        """
+        import random
+        key_points = self.get_key_points_from_json(theme_name)
+        if key_points:
+            return random.choice(key_points)
+        return None
+    
+    def get_combined_text_from_json(self, theme_name: str) -> str:
+        """
+        Get combined text from preprocessed JSON file, or extract from PDFs if JSON doesn't exist.
+        
+        Note: Since we removed full text from JSON to keep files manageable,
+        this method now creates a summary from key points if JSON exists.
+        
+        Args:
+            theme_name: Name of the theme directory.
+        
+        Returns:
+            Combined text from all PDFs or summary from key points.
+        """
+        processed_content = self.load_processed_content(theme_name)
+        if processed_content and 'summary' in processed_content:
+            # Since we removed combined_text, create a summary from key points
+            key_points = processed_content['summary'].get('combined_key_points', [])
+            if key_points:
+                # Join key points to create a summary text for caption generation
+                return ". ".join(key_points[:5]) + "."
+            return ''
+        
+        # Fallback to processing PDFs
+        return self.get_combined_text(theme_name)
+    
+    def get_combined_text(self, theme_name: str, max_pages_per_pdf: Optional[int] = 10) -> str:
+        """
+        Get combined text from all PDFs in a theme.
+        First tries to load from JSON, then falls back to processing PDFs.
+        
+        Args:
+            theme_name: Name of the theme directory.
+            max_pages_per_pdf: Maximum pages to extract from each PDF (only used if JSON doesn't exist).
+        
+        Returns:
+            Combined text from all PDFs.
+        """
+        # Try to load from JSON first
+        processed_content = self.load_processed_content(theme_name)
+        if processed_content and 'summary' in processed_content:
+            return processed_content['summary'].get('combined_text', '')
+        
+        # Fallback to processing PDFs
+        pdf_texts = self.process_theme_pdfs(theme_name, max_pages_per_pdf)
+        return "\n\n---\n\n".join(pdf_texts.values())
 
 
 def main():

@@ -9,6 +9,7 @@ import click
 from pathlib import Path
 from src.content_generator import ContentGenerator
 from src.brand_extractor import BrandExtractor
+from src.pdf_preprocessor import PDFPreprocessor
 from src.utils import load_config
 from colorama import init, Fore, Style
 
@@ -172,6 +173,63 @@ def extract_brand():
     extractor.save_to_config(config_path, brand_info)
     
     click.echo(f"\n{Fore.GREEN}Brand information saved to config/settings.yaml{Style.RESET_ALL}")
+
+
+@cli.command()
+@click.option('--theme', '-t', help='Process specific theme (e.g., 05_kombucha_benefits)')
+@click.option('--all', is_flag=True, help='Process all themes (04-07)')
+@click.option('--max-pages', default=10, type=int, help='Maximum pages to extract per PDF (default: 10)')
+@click.option('--force', is_flag=True, help='Reprocess even if JSON already exists')
+def preprocess_pdfs(theme, all, max_pages, force):
+    """Preprocess PDFs and save structured data to JSON files."""
+    try:
+        config = load_config()
+        preprocessor = PDFPreprocessor(config=config)
+        
+        if all:
+            click.echo(f"{Fore.CYAN}Preprocessing all themes (04-07)...{Style.RESET_ALL}")
+            results = preprocessor.preprocess_all_themes(
+                max_pages_per_pdf=max_pages,
+                force=force
+            )
+            
+            click.echo(f"\n{Fore.GREEN}✓ Preprocessing complete!{Style.RESET_ALL}")
+            successful = sum(1 for r in results.values() if 'error' not in r)
+            click.echo(f"  Successfully processed: {successful}/{len(results)} themes")
+            
+            for theme_name, result in results.items():
+                if 'error' in result:
+                    click.echo(f"  {Fore.RED}✗ {theme_name}: {result['error']}{Style.RESET_ALL}")
+                else:
+                    json_path = preprocessor.assets_base_path / theme_name / 'content.json'
+                    click.echo(f"  {Fore.GREEN}✓ {theme_name}: {json_path}{Style.RESET_ALL}")
+        
+        elif theme:
+            click.echo(f"{Fore.CYAN}Preprocessing theme: {theme}{Style.RESET_ALL}")
+            result = preprocessor.preprocess_theme(
+                theme,
+                max_pages_per_pdf=max_pages,
+                force=force
+            )
+            
+            if result:
+                json_path = preprocessor.assets_base_path / theme / 'content.json'
+                click.echo(f"\n{Fore.GREEN}✓ Preprocessing complete!{Style.RESET_ALL}")
+                click.echo(f"  JSON file: {json_path}")
+                click.echo(f"  PDFs processed: {result.get('summary', {}).get('total_pdfs', 0)}")
+                click.echo(f"  Key points extracted: {len(result.get('summary', {}).get('combined_key_points', []))}")
+            else:
+                click.echo(f"{Fore.RED}Error: No PDFs found or processing failed{Style.RESET_ALL}", err=True)
+                exit(1)
+        else:
+            click.echo(f"{Fore.RED}Error: Must specify --theme or --all{Style.RESET_ALL}", err=True)
+            click.echo("  Example: python3 main.py preprocess-pdfs --theme 05_kombucha_benefits")
+            click.echo("  Example: python3 main.py preprocess-pdfs --all")
+            exit(1)
+    
+    except Exception as e:
+        click.echo(f"{Fore.RED}Error: {e}{Style.RESET_ALL}", err=True)
+        exit(1)
 
 
 @cli.command()

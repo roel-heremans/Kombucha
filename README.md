@@ -8,10 +8,12 @@ Automated Instagram content generator for Real Health Kombucha, creating Reels a
 
 - **Theme-based Asset Organization**: Organize photos, videos, and PDFs by themes (e.g., "Kombucha Benefits", "Kombucha Research")
 - **AI-Powered Captions**: Generate engaging captions and hashtags using AI from PDF content
+- **LLM-Refined Content**: PDF preprocessing uses AI to transform technical research into accessible, human-friendly key points
 - **Brand Consistency**: Automatically extracts and applies brand colors and fonts from realhealthkombucha.com
 - **Image Posts**: Create Instagram feed posts with text overlays and brand styling
-- **Video Reels**: Generate Instagram Reels with clips, music, transitions, and text overlays
+- **Video Reels**: Generate Instagram Reels with clips, music, transitions, and text overlays using refined, accessible content
 - **Batch Generation**: Generate multiple feed posts and reels in one command
+- **Smart Content Selection**: Automatically uses refined key points from JSON files for better video content
 - **Ready-to-Post**: Outputs final content files with captions ready for manual posting
 
 ## Installation
@@ -89,14 +91,87 @@ Extract brand colors and fonts from your website (optional but recommended):
 python3 main.py extract-brand
 ```
 
-### 3. List Available Themes
+### 3. Preprocess PDFs (Highly Recommended)
+
+Preprocess PDFs to extract structured information and save to JSON files. **This step uses AI to transform technical research into accessible, human-friendly key points** that are perfect for social media content.
+
+```bash
+# Preprocess a specific theme
+python3 main.py preprocess-pdfs --theme 05_kombucha_benefits
+
+# Preprocess all themes (04-07)
+python3 main.py preprocess-pdfs --all
+
+# Reprocess even if JSON exists (useful after updating PDFs or refining prompts)
+python3 main.py preprocess-pdfs --theme 06_digestive_health --force
+
+# Customize pages per PDF (default: 10)
+python3 main.py preprocess-pdfs --theme 05_kombucha_benefits --max-pages 15
+```
+
+**Benefits:**
+- **AI-Refined Content**: Key points are automatically transformed from technical language into accessible, engaging takeaways
+- **Faster Content Generation**: No PDF processing during video generation - uses pre-processed JSON
+- **Better Video Content**: Refined key points are optimized for readability and engagement
+- **Manual Curation**: Edit `assets/{theme}/content.json` to refine extracted information
+- **Version Control Friendly**: JSON is text-based and easy to track
+- **Reprocess Anytime**: Update JSON files when PDFs change or to improve refinement
+
+**JSON File Structure:**
+The preprocessing creates `assets/{theme}/content.json` with:
+
+```json
+{
+  "theme": "05_kombucha_benefits",
+  "processed_at": "2026-02-04T12:00:00",
+  "pdfs": [
+    {
+      "filename": "research_paper.pdf",
+      "key_points": [
+        "Kombucha helps support your digestive system naturally.",
+        "The probiotics in kombucha can boost your immune health."
+      ],
+      "word_count": 5000,
+      "character_count": 25000,
+      "pages_processed": 10
+    }
+  ],
+  "summary": {
+    "combined_key_points": [
+      "Kombucha is a fermented drink that supports gut health.",
+      "Regular consumption may boost your immune system."
+    ],
+    "total_word_count": 15000,
+    "total_character_count": 75000,
+    "total_pdfs": 3
+  }
+}
+```
+
+**Note**: Full PDF text is not stored in JSON (only refined key points) to keep files manageable and focused on actionable content.
+
+**Manual Editing:**
+You can manually edit the JSON file to:
+- Refine or rewrite key points for your brand voice
+- Remove irrelevant or less impactful points
+- Add custom key points
+- Adjust the tone and style
+- Remove points that don't align with your messaging
+
+**How Content Generation Uses JSON:**
+- When generating videos, the system automatically uses refined key points from JSON (if available)
+- Randomly selects from available key points for variety
+- Falls back to PDF processing only if JSON doesn't exist
+- Health benefit overlays use the accessible, refined language from JSON
+
+### 4. List Available Themes
 
 View all available themes and their asset counts:
 ```bash
 python3 main.py themes
 ```
 
-### 4. Generate Feed Posts
+### 5. Generate Feed Posts
 
 Generate Instagram feed posts (square images with text overlays):
 
@@ -114,7 +189,7 @@ python3 main.py generate --theme 04_immune_system --type feed --use-quote
 python3 main.py generate --theme 07_kombucha_research --type feed --no-pdf
 ```
 
-### 5. Generate Reels
+### 6. Generate Reels
 
 Generate Instagram Reels (vertical videos):
 
@@ -129,13 +204,17 @@ python3 main.py generate --theme 06_digestive_health --type reel --videos assets
 python3 main.py generate --theme 07_kombucha_research --type reel --music assets/00_music/Evening.mp3
 
 # Generate combined reel (video + image + quote + health benefit overlay)
+# Uses refined key points from JSON automatically for better content
 python3 main.py generate --theme 05_kombucha_benefits --type reel --combined --music assets/00_music/Evening.mp3
 
 # Generate combined reel with specific image and videos
 python3 main.py generate --theme 06_digestive_health --type reel --combined --image assets/01_images/photo.jpg --videos assets/02_videos/clip1.mp4 --music assets/00_music/Evening.mp3
+
+# Generate combined reel with additional LLM refinement (only if not using JSON)
+python3 main.py generate --theme 07_kombucha_research --type reel --combined --llm-refine --music assets/00_music/Morning.mp3
 ```
 
-### 6. Batch Generation (Generate Multiple Content at Once)
+### 7. Batch Generation (Generate Multiple Content at Once)
 
 Generate multiple feed posts and reels in one command - perfect for creating content in bulk:
 
@@ -160,13 +239,18 @@ python3 main.py batch-generate --music assets/00_music/Morning.mp3
 
 # All batch generations use quotes and LLM refinement by default
 # (quotes and LLM refinement are enabled automatically)
+# Note: If JSON files exist, refined key points are used automatically (no additional LLM refinement needed)
 python3 main.py batch-generate --feeds 3 --reels 3
+
+# Disable quotes or LLM refinement if desired
+python3 main.py batch-generate --feeds 3 --reels 3 --no-use-quote --no-llm-refine
 ```
 
 **Batch Generation Features:**
 - **Random Selection**: Automatically picks themes, images, videos, and music from your assets
 - **Progress Tracking**: Shows real-time progress for each item being generated
 - **Error Handling**: Continues generating even if one item fails, shows detailed summary at the end
+- **Smart Content**: Automatically uses refined key points from JSON files when available (better than raw PDF extraction)
 - **Smart Defaults**: Uses quotes and LLM refinement by default for best quality content
 - **Organized Output**: All content saved to `output/feed_posts/` and `output/reels/` with timestamps
 
@@ -199,7 +283,7 @@ Generated content saved to:
   Reels: output/reels/
 ```
 
-### 7. Generate Quote Cards
+### 8. Generate Quote Cards
 
 Generate standalone quote card images:
 
@@ -211,7 +295,7 @@ python3 generate_quote_card.py
 python3 generate_quote_card.py "Your custom quote text here"
 ```
 
-### 8. View Statistics
+### 9. View Statistics
 
 View statistics about your assets:
 
@@ -223,7 +307,7 @@ python3 main.py stats
 python3 main.py stats --theme 05_kombucha_benefits
 ```
 
-### 9. Check Configuration
+### 10. Check Configuration
 
 View current configuration settings:
 ```bash
@@ -249,6 +333,39 @@ Edit `config/settings.yaml` to customize:
 - Theme settings and hashtags
 - AI provider and model settings
 - Target audiences
+- Language settings (default: English)
+
+## Workflow Recommendations
+
+### Recommended Workflow:
+
+1. **Organize Assets**: Place PDFs, images, videos, and music in the correct folders
+2. **Preprocess PDFs**: Run `preprocess-pdfs --all` to create refined JSON files
+3. **Review & Edit**: Manually review and edit `content.json` files to match your brand voice
+4. **Generate Content**: Use `batch-generate` or individual `generate` commands
+5. **Post**: Upload generated content to Instagram using the provided captions
+
+### Best Practices:
+
+- **Preprocess First**: Always preprocess PDFs before generating content for best results
+- **Review JSON Files**: Take time to review and refine key points in JSON files
+- **Use Combined Reels**: Combined reels (with quotes + health benefits) perform best
+- **Batch Generation**: Use batch generation to create multiple pieces of content efficiently
+- **Reprocess When Needed**: Use `--force` flag to reprocess PDFs after updates
+
+## Troubleshooting
+
+**Q: Videos don't use refined key points from JSON**
+- A: Make sure you've run `preprocess-pdfs` first. Check that `content.json` exists in your theme folder.
+
+**Q: Key points are too technical**
+- A: Edit the JSON file manually, or reprocess with `--force` to regenerate with improved LLM refinement.
+
+**Q: Content generation is slow**
+- A: Preprocess PDFs first! JSON-based generation is much faster than on-the-fly PDF processing.
+
+**Q: Want to use different key points**
+- A: Edit `assets/{theme}/content.json` directly, or the system automatically uses random selection for variety.
 
 ## License
 

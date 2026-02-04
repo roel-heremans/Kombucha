@@ -98,27 +98,69 @@ class VideoProcessor:
         
         return clip
     
+    def calculate_text_duration(self, text: str, min_duration: float = 3.0, max_duration: float = 10.0) -> float:
+        """
+        Calculate appropriate duration for text based on reading speed.
+        
+        Args:
+            text: Text to display.
+            min_duration: Minimum duration in seconds.
+            max_duration: Maximum duration in seconds.
+        
+        Returns:
+            Calculated duration in seconds.
+        """
+        # Count words and characters
+        words = len(text.split())
+        chars = len(text)
+        
+        # Reading speed: approximately 2-3 words per second for comfortable reading
+        # Also account for character count (longer words need more time)
+        # Base calculation: 2.5 words per second + 0.1 seconds per 10 characters
+        word_based_duration = words / 2.5
+        char_based_duration = chars / 100.0  # 100 chars per second
+        
+        # Use the longer of the two calculations to ensure readability
+        calculated_duration = max(word_based_duration, char_based_duration)
+        
+        # Add extra time for multi-line text (more lines = more reading time)
+        num_lines = len(textwrap.wrap(text, width=30))
+        if num_lines > 1:
+            calculated_duration += (num_lines - 1) * 0.5
+        
+        # Ensure duration is within bounds
+        duration = max(min_duration, min(calculated_duration, max_duration))
+        
+        return duration
+    
     def create_text_clip(
         self,
         text: str,
-        duration: float,
+        duration: Optional[float] = None,
         position: str = 'bottom',
         font_size: int = 60,
-        start_time: float = 0
+        start_time: float = 0,
+        auto_duration: bool = True
     ) -> TextClip:
         """
         Create a text overlay clip.
         
         Args:
             text: Text to display.
-            duration: Duration of text clip.
+            duration: Duration of text clip. If None and auto_duration=True, calculates based on text length.
             position: Position ('top', 'center', 'bottom').
             font_size: Font size.
             start_time: Start time in seconds.
+            auto_duration: If True and duration is None, automatically calculate duration based on text length.
         
         Returns:
             TextClip object.
         """
+        # Calculate duration if not provided and auto_duration is enabled
+        if duration is None and auto_duration:
+            duration = self.calculate_text_duration(text, min_duration=3.0, max_duration=10.0)
+        elif duration is None:
+            duration = 5.0  # Default fallback
         # Wrap text
         max_chars_per_line = 30
         wrapped_lines = textwrap.wrap(text, width=max_chars_per_line)
@@ -587,12 +629,20 @@ class VideoProcessor:
         
         # Add quote overlay (appears early in the video)
         if quote_text:
+            # Calculate duration based on text length, but ensure it doesn't exceed video duration
+            quote_duration = self.calculate_text_duration(quote_text, min_duration=3.0, max_duration=min(10.0, final_clip.duration * 0.4))
+            quote_start_time = final_clip.duration * 0.1
+            # Ensure quote doesn't extend beyond video end
+            if quote_start_time + quote_duration > final_clip.duration:
+                quote_duration = max(3.0, final_clip.duration - quote_start_time - 0.5)
+            
             quote_clip = self.create_text_clip(
                 quote_text,
-                duration=min(5.0, final_clip.duration * 0.3),
+                duration=quote_duration,
                 position='center',
                 font_size=65,  # Slightly smaller to ensure it fits
-                start_time=final_clip.duration * 0.1
+                start_time=quote_start_time,
+                auto_duration=False  # Already calculated above
             )
             text_clips.append(quote_clip)
         
@@ -600,12 +650,20 @@ class VideoProcessor:
         if health_benefit_text:
             # Clean up the health benefit text - remove newlines and ensure it's readable
             clean_benefit = health_benefit_text.replace('\n', ' ').strip()
+            # Calculate duration based on text length
+            benefit_duration = self.calculate_text_duration(clean_benefit, min_duration=3.0, max_duration=min(12.0, final_clip.duration * 0.5))
+            benefit_start_time = final_clip.duration * 0.5
+            # Ensure benefit text doesn't extend beyond video end
+            if benefit_start_time + benefit_duration > final_clip.duration:
+                benefit_duration = max(3.0, final_clip.duration - benefit_start_time - 0.5)
+            
             benefit_clip = self.create_text_clip(
                 clean_benefit,
-                duration=min(6.0, final_clip.duration * 0.4),
+                duration=benefit_duration,
                 position='bottom',
                 font_size=55,  # Slightly smaller for bottom text
-                start_time=final_clip.duration * 0.5
+                start_time=benefit_start_time,
+                auto_duration=False  # Already calculated above
             )
             text_clips.append(benefit_clip)
         

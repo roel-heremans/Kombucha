@@ -162,7 +162,10 @@ class ContentGenerator:
         pdf_text = ""
         if use_pdf_content and not quote_text:
             # Only process PDFs if we don't have a quote to use for caption
-            pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
+            # Try JSON first, then fallback to PDF processing
+            pdf_text = self.pdf_processor.get_combined_text_from_json(theme_name)
+            if not pdf_text:
+                pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
         
         # Generate caption - use quote if available, otherwise use PDF content
         caption_source = quote_text if quote_text else (pdf_text or "Kombucha benefits and health information.")
@@ -192,7 +195,12 @@ class ContentGenerator:
         elif not images:
             # Extract a good quote from PDF content
             if pdf_text:
-                key_points = self.pdf_processor.extract_key_points(pdf_text, max_points=3)
+                # Try to get key points from JSON first
+                key_points = self.pdf_processor.get_key_points_from_json(theme_name)
+                if not key_points:
+                    key_points = self.pdf_processor.extract_key_points(pdf_text, max_points=3)
+                else:
+                    key_points = key_points[:3]  # Limit to 3
                 if key_points:
                     # Use the first key point as quote (limit to 200 chars)
                     quote = key_points[0][:200]
@@ -330,70 +338,76 @@ class ContentGenerator:
         pdf_text = ""
         health_benefit_text = None
         if use_pdf_content:
-            pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
-            if pdf_text:
-                key_points = self.pdf_processor.extract_key_points(pdf_text, max_points=1)
-                if key_points:
-                    # Get complete sentence(s) - truncate at sentence boundary, not mid-sentence
-                    benefit_text = key_points[0]
-                    # Allow longer text for health benefits (up to 250 chars for better completeness)
-                    if len(benefit_text) > 250:
-                        # Find the last complete sentence within 250 chars
-                        truncated = benefit_text[:250]
-                        # Look for sentence endings (period, exclamation, question mark)
-                        last_period = truncated.rfind('.')
-                        last_exclamation = truncated.rfind('!')
-                        last_question = truncated.rfind('?')
-                        last_newline = truncated.rfind('\n')
-                        last_sentence_end = max(last_period, last_exclamation, last_question, last_newline)
-                        
-                        if last_sentence_end > 100:  # Only if we found a reasonable sentence end
-                            health_benefit_text = benefit_text[:last_sentence_end + 1].strip()
-                        else:
-                            # If no sentence end found, look for a complete phrase ending with comma
-                            # But only if it's near the end (within last 50 chars)
-                            last_comma = truncated.rfind(',')
-                            if last_comma > 200:  # Comma near the end
-                                # Check if there's a space after comma (complete phrase)
-                                if last_comma < len(benefit_text) - 1 and benefit_text[last_comma + 1] == ' ':
-                                    health_benefit_text = benefit_text[:last_comma + 1].strip()
-                                else:
-                                    # Fall back to a space break
-                                    last_space = truncated.rfind(' ')
-                                    if last_space > 200:
-                                        health_benefit_text = benefit_text[:last_space].strip() + "..."
-                                    else:
-                                        health_benefit_text = truncated.strip() + "..."
-                            else:
-                                # Fall back to space break
-                                last_space = truncated.rfind(' ')
-                                if last_space > 200:
-                                    health_benefit_text = benefit_text[:last_space].strip() + "..."
-                                else:
-                                    health_benefit_text = truncated.strip() + "..."
-                    else:
-                        health_benefit_text = benefit_text.strip()
+            # Prioritize refined key points from JSON (already human-friendly and accessible)
+            json_content = self.pdf_processor.load_processed_content(theme_name)
+            using_json = json_content is not None and 'summary' in json_content
+            
+            if using_json:
+                # Use a random key point from JSON for variety (all are already refined)
+                benefit_text = self.pdf_processor.get_random_key_point_from_json(theme_name)
+                if benefit_text:
+                    # Get all key points for caption generation context
+                    all_key_points = self.pdf_processor.get_key_points_from_json(theme_name, max_points=5)
+                    pdf_text = ". ".join(all_key_points[:3]) + "." if all_key_points else ""
+                else:
+                    benefit_text = None
+            else:
+                # Fallback: get combined text and extract key points (raw extraction)
+                pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
+                if pdf_text:
+                    key_points = self.pdf_processor.extract_key_points(pdf_text, max_points=1)
+                    benefit_text = key_points[0] if key_points else None
+                else:
+                    benefit_text = None
+            
+            if benefit_text:
+                # Use the refined key point from JSON (already optimized for readability)
+                # or the extracted one from PDFs
+                
+                # JSON key points are already refined to be short and accessible
+                # But we still need to ensure they fit on screen (max 200 chars for video)
+                if len(benefit_text) > 200:
+                    # Smart truncation: find last sentence boundary
+                    truncated = benefit_text[:200]
+                    last_period = truncated.rfind('.')
+                    last_exclamation = truncated.rfind('!')
+                    last_question = truncated.rfind('?')
+                    last_sentence_end = max(last_period, last_exclamation, last_question)
                     
-                    # Apply LLM refinement if requested
-                    if use_llm_refinement and health_benefit_text:
-                        try:
-                            refined = self.ai_generator.refine_health_benefit(
-                                health_benefit_text,
-                                theme_name,
-                                max_length=200
-                            )
-                            # Use the language version matching config, fallback to original if not available
-                            config_language = self.config.get('ai', {}).get('language', 'pt')
-                            if config_language in refined:
-                                health_benefit_text = refined[config_language]
-                            elif 'pt' in refined:
-                                health_benefit_text = refined['pt']
-                            elif 'en' in refined:
-                                health_benefit_text = refined['en']
-                            # If refinement failed, health_benefit_text remains unchanged
-                        except Exception as e:
-                            print(f"Warning: LLM refinement failed, using original text: {e}")
-                            # Continue with original text
+                    if last_sentence_end > 50:  # Found a reasonable sentence end
+                        health_benefit_text = benefit_text[:last_sentence_end + 1].strip()
+                    else:
+                        # No sentence end found, truncate at word boundary
+                        last_space = truncated.rfind(' ')
+                        if last_space > 150:
+                            health_benefit_text = benefit_text[:last_space].strip() + "..."
+                        else:
+                            health_benefit_text = truncated.strip() + "..."
+                else:
+                    health_benefit_text = benefit_text.strip()
+                
+                # Only apply additional LLM refinement if explicitly requested AND not using JSON
+                # (JSON points are already refined, so double refinement is usually unnecessary)
+                if use_llm_refinement and not using_json and health_benefit_text:
+                    try:
+                        refined = self.ai_generator.refine_health_benefit(
+                            health_benefit_text,
+                            theme_name,
+                            max_length=200
+                        )
+                        # Use the language version matching config
+                        config_language = self.config.get('ai', {}).get('language', 'en')
+                        if config_language in refined:
+                            health_benefit_text = refined[config_language]
+                        elif 'en' in refined:
+                            health_benefit_text = refined['en']
+                        elif 'pt' in refined:
+                            health_benefit_text = refined['pt']
+                    except Exception as e:
+                        print(f"Warning: LLM refinement failed, using original text: {e}")
+                elif using_json:
+                    # JSON key points are already refined, so we can use them directly
+                    print(f"Using refined key points from JSON (already optimized for accessibility)")
         
         # Get quote
         quote_text = None
@@ -503,7 +517,10 @@ class ContentGenerator:
         # Get PDF content for captions/subtitles
         pdf_text = ""
         if use_pdf_content:
-            pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
+            # Try JSON first, then fallback to PDF processing
+            pdf_text = self.pdf_processor.get_combined_text_from_json(theme_name)
+            if not pdf_text:
+                pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
         
         # Generate caption for post
         caption_data = self.ai_generator.generate_caption(
