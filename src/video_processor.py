@@ -5,11 +5,11 @@ Creates Instagram Reels with clips, music, text overlays, and transitions.
 """
 
 try:
-    from moviepy import VideoFileClip, CompositeVideoClip, TextClip, concatenate_videoclips, ImageClip, AudioFileClip, concatenate_audioclips
+    from moviepy import VideoFileClip, CompositeVideoClip, TextClip, concatenate_videoclips, ImageClip, AudioFileClip, concatenate_audioclips, ColorClip
 except ImportError:
     # Fallback for older moviepy versions
     try:
-        from moviepy.editor import VideoFileClip, CompositeVideoClip, TextClip, concatenate_videoclips, ImageClip, AudioFileClip, concatenate_audioclips
+        from moviepy.editor import VideoFileClip, CompositeVideoClip, TextClip, concatenate_videoclips, ImageClip, AudioFileClip, concatenate_audioclips, ColorClip
     except ImportError:
         raise ImportError("moviepy is not installed. Please install it with: pip install moviepy")
 from pathlib import Path
@@ -184,9 +184,16 @@ class VideoProcessor:
             # Ensure it doesn't go off screen
             y_pos = max(100, y_pos)
         
-        # Get colors
-        text_color = self.brand_colors.get('text', '#000000')
-        bg_color = self.brand_colors.get('background', '#ffffff')
+        # Get brand colors for text fill (primary -> secondary -> text fallback)
+        text_fill_color = (
+            self.brand_colors.get('primary') or 
+            self.brand_colors.get('secondary') or 
+            self.brand_colors.get('text', '#000000')
+        )
+        
+        # Use white stroke for maximum contrast and readability on any background
+        stroke_color = '#ffffff'
+        stroke_width = 3  # Increased from 2 for better visibility
         
         # Get font with fallback
         font_name = self.brand_fonts.get('heading', 'Arial')
@@ -208,10 +215,10 @@ class VideoProcessor:
             txt_clip = TextClip(
                 text=display_text,
                 font_size=font_size,
-                color=text_color,
+                color=text_fill_color,
                 font=font_name,
-                stroke_color=bg_color,
-                stroke_width=2,
+                stroke_color=stroke_color,
+                stroke_width=stroke_width,
                 size=(self.reel_width - 120, None),  # More padding
                 margin=(20, 20)  # Add margin to prevent clipping
             )
@@ -224,10 +231,10 @@ class VideoProcessor:
                 txt_clip = TextClip(
                     text=display_text,
                     font_size=font_size,
-                    color=text_color,
+                    color=text_fill_color,
                     font=font_name,
-                    stroke_color=bg_color,
-                    stroke_width=2,
+                    stroke_color=stroke_color,
+                    stroke_width=stroke_width,
                     size=(self.reel_width - 120, None),
                     margin=(20, 20)
                 )
@@ -237,7 +244,9 @@ class VideoProcessor:
                     txt_clip = TextClip(
                         text=display_text,
                         font_size=font_size,
-                        color=text_color,
+                        color=text_fill_color,
+                        stroke_color=stroke_color,
+                        stroke_width=stroke_width,
                         size=(self.reel_width - 120, None),
                         margin=(20, 20)
                     )
@@ -246,10 +255,10 @@ class VideoProcessor:
                     txt_clip = TextClip(
                         display_text,
                         fontsize=font_size,
-                        color=text_color,
+                        color=text_fill_color,
                         font=font_name,
-                        stroke_color=bg_color,
-                        stroke_width=2,
+                        stroke_color=stroke_color,
+                        stroke_width=stroke_width,
                         method='caption',
                         size=(self.reel_width - 120, None),
                         align='center'
@@ -269,8 +278,6 @@ class VideoProcessor:
             txt_clip = txt_clip.with_start(start_time)
         else:
             txt_clip = txt_clip.set_start(start_time)
-        
-        return txt_clip
         
         return txt_clip
     
@@ -390,6 +397,47 @@ class VideoProcessor:
                         audio = audio.fx(volumex, 0.3)
                     except:
                         pass  # Continue without volume adjustment
+                
+                # Add fade-out to audio (volume decrease at the end)
+                audio_fade_duration = 1.5  # 1.5 second audio fade-out
+                if audio.duration > audio_fade_duration:
+                    try:
+                        # Create a volume function that fades from 1.0 to 0.0
+                        fade_start_time = audio.duration - audio_fade_duration
+                        def volume_func(t):
+                            if t < fade_start_time:
+                                return 1.0  # Full volume before fade
+                            else:
+                                # Fade from 1.0 to 0.0 over audio_fade_duration
+                                fade_progress = (t - fade_start_time) / audio_fade_duration
+                                return max(0.0, 1.0 - fade_progress)
+                        
+                        # Apply volume fade using with_volume
+                        try:
+                            audio = audio.with_volume(volume_func)
+                        except AttributeError:
+                            # Fallback: try using volumex with a lambda
+                            try:
+                                # Create a new audio clip with volume applied per frame
+                                from moviepy.audio.AudioClip import AudioArrayClip
+                                import numpy as np
+                                
+                                # Get audio array
+                                audio_array = audio.to_soundarray(fps=audio.fps)
+                                
+                                # Apply volume fade
+                                for i in range(len(audio_array)):
+                                    t = i / audio.fps
+                                    vol = volume_func(t)
+                                    audio_array[i] = audio_array[i] * vol
+                                
+                                # Create new audio clip
+                                audio = AudioArrayClip(audio_array, fps=audio.fps)
+                            except Exception as e:
+                                print(f"Warning: Could not apply audio fade-out: {e}")
+                    except Exception as e:
+                        print(f"Warning: Could not apply audio fade-out: {e}")
+                
                 # Handle moviepy 2.x API changes
                 if hasattr(final_clip, 'with_audio'):
                     final_clip = final_clip.with_audio(audio)
@@ -398,16 +446,40 @@ class VideoProcessor:
             except Exception as e:
                 print(f"Warning: Could not add music: {e}")
         
-        # Write video file
+        # Write video file with fade-out effects using ffmpeg filters
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        final_clip.write_videofile(
-            str(output_path),
-            fps=30,
-            codec='libx264',
-            audio_codec='aac',
-            preset='medium',
-            bitrate='8000k'
-        )
+        
+        # Apply fade-out using ffmpeg filters if duration is sufficient
+        fade_duration = 1.0  # 1 second video fade-out
+        # Audio fade-out is already applied via with_volume method above
+        
+        if final_clip.duration > fade_duration:
+            # Calculate fade start time
+            fade_start = final_clip.duration - fade_duration
+            
+            # Build ffmpeg filter string for video fade-out only
+            video_filter = f"fade=t=out:st={fade_start:.2f}:d={fade_duration:.2f}"
+            
+            # Write with video fade effect - force re-encoding to apply filter
+            final_clip.write_videofile(
+                str(output_path),
+                fps=30,
+                codec='libx264',
+                audio_codec='aac',
+                preset='medium',
+                bitrate='8000k',
+                audio_bitrate='192k',
+                ffmpeg_params=['-vf', video_filter, '-c:v', 'libx264', '-c:a', 'aac']
+            )
+        else:
+            final_clip.write_videofile(
+                str(output_path),
+                fps=30,
+                codec='libx264',
+                audio_codec='aac',
+                preset='medium',
+                bitrate='8000k'
+            )
         
         # Clean up
         final_clip.close()
@@ -670,6 +742,9 @@ class VideoProcessor:
         if text_clips:
             final_clip = CompositeVideoClip([final_clip] + text_clips)
         
+        # Video fade-out will be applied via ffmpeg filters during write_videofile
+        # This is more reliable than trying to use MoviePy's opacity methods on CompositeVideoClip
+        
         # Add background music if provided
         if music_path and music_path.exists():
             try:
@@ -699,6 +774,47 @@ class VideoProcessor:
                         audio = audio.fx(volumex, 0.3)
                     except:
                         pass  # Continue without volume adjustment
+                
+                # Add fade-out to audio (volume decrease at the end)
+                audio_fade_duration = 1.5  # 1.5 second audio fade-out
+                if audio.duration > audio_fade_duration:
+                    try:
+                        # Create a volume function that fades from 1.0 to 0.0
+                        fade_start_time = audio.duration - audio_fade_duration
+                        def volume_func(t):
+                            if t < fade_start_time:
+                                return 1.0  # Full volume before fade
+                            else:
+                                # Fade from 1.0 to 0.0 over audio_fade_duration
+                                fade_progress = (t - fade_start_time) / audio_fade_duration
+                                return max(0.0, 1.0 - fade_progress)
+                        
+                        # Apply volume fade using with_volume
+                        try:
+                            audio = audio.with_volume(volume_func)
+                        except AttributeError:
+                            # Fallback: try using volumex with a lambda
+                            try:
+                                # Create a new audio clip with volume applied per frame
+                                from moviepy.audio.AudioClip import AudioArrayClip
+                                import numpy as np
+                                
+                                # Get audio array
+                                audio_array = audio.to_soundarray(fps=audio.fps)
+                                
+                                # Apply volume fade
+                                for i in range(len(audio_array)):
+                                    t = i / audio.fps
+                                    vol = volume_func(t)
+                                    audio_array[i] = audio_array[i] * vol
+                                
+                                # Create new audio clip
+                                audio = AudioArrayClip(audio_array, fps=audio.fps)
+                            except Exception as e:
+                                print(f"Warning: Could not apply audio fade-out: {e}")
+                    except Exception as e:
+                        print(f"Warning: Could not apply audio fade-out: {e}")
+                
                 # Handle moviepy 2.x API changes
                 if hasattr(final_clip, 'with_audio'):
                     final_clip = final_clip.with_audio(audio)
@@ -707,16 +823,40 @@ class VideoProcessor:
             except Exception as e:
                 print(f"Warning: Could not add music: {e}")
         
-        # Write video file
+        # Write video file with fade-out effects using ffmpeg filters
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        final_clip.write_videofile(
-            str(output_path),
-            fps=30,
-            codec='libx264',
-            audio_codec='aac',
-            preset='medium',
-            bitrate='8000k'
-        )
+        
+        # Apply fade-out using ffmpeg filters if duration is sufficient
+        fade_duration = 1.0  # 1 second video fade-out
+        # Audio fade-out is already applied via with_volume method above
+        
+        if final_clip.duration > fade_duration:
+            # Calculate fade start time
+            fade_start = final_clip.duration - fade_duration
+            
+            # Build ffmpeg filter string for video fade-out only
+            video_filter = f"fade=t=out:st={fade_start:.2f}:d={fade_duration:.2f}"
+            
+            # Write with video fade effect - force re-encoding to apply filter
+            final_clip.write_videofile(
+                str(output_path),
+                fps=30,
+                codec='libx264',
+                audio_codec='aac',
+                preset='medium',
+                bitrate='8000k',
+                audio_bitrate='192k',
+                ffmpeg_params=['-vf', video_filter, '-c:v', 'libx264', '-c:a', 'aac']
+            )
+        else:
+            final_clip.write_videofile(
+                str(output_path),
+                fps=30,
+                codec='libx264',
+                audio_codec='aac',
+                preset='medium',
+                bitrate='8000k'
+            )
         
         # Clean up
         final_clip.close()
