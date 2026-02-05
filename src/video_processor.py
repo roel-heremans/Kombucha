@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 import textwrap
 import tempfile
+import os
 from PIL import Image, ImageOps
 from .utils import load_config, get_brand_colors, get_brand_fonts
 
@@ -34,6 +35,7 @@ class VideoProcessor:
             config = load_config()
         
         self.config = config
+        self.assets_base_path = Path(__file__).parent.parent / 'assets'
         self.brand_colors = get_brand_colors(config)
         self.brand_fonts = get_brand_fonts(config)
         
@@ -46,6 +48,20 @@ class VideoProcessor:
         reel_duration = instagram_config.get('reel_duration', {})
         self.min_duration = reel_duration.get('min', 15)
         self.max_duration = reel_duration.get('max', 90)
+        
+        # Configure MoviePy to use system temp directory instead of current working directory
+        # This prevents temporary files from being created in the project root
+        try:
+            import moviepy.config
+            # Set MoviePy's temporary directory to system temp
+            temp_dir = tempfile.gettempdir()
+            os.environ['MOVIEPY_TEMP_DIR'] = temp_dir
+            # Also try setting it via config if available
+            if hasattr(moviepy.config, 'TEMP_DIR'):
+                moviepy.config.TEMP_DIR = temp_dir
+        except Exception:
+            # If setting temp dir fails, continue anyway
+            pass
     
     def hex_to_rgb(self, hex_color: str) -> Tuple[int, int, int]:
         """Convert hex color to RGB tuple."""
@@ -457,8 +473,19 @@ class VideoProcessor:
             # Calculate fade start time
             fade_start = final_clip.duration - fade_duration
             
-            # Build ffmpeg filter string for video fade-out only
-            video_filter = f"fade=t=out:st={fade_start:.2f}:d={fade_duration:.2f}"
+            # Build ffmpeg filter string for video fade-out to white
+            # Use geq filter to blend white (255,255,255) into the video over time
+            # Formula: blend each RGB channel towards 255 based on fade progress
+            fade_end = final_clip.duration
+            video_filter = (
+                f"geq="
+                f"r='if(between(t,{fade_start:.2f},{fade_end:.2f}), "
+                f"r+(255-r)*((t-{fade_start:.2f})/{fade_duration:.2f}), r)':"
+                f"g='if(between(t,{fade_start:.2f},{fade_end:.2f}), "
+                f"g+(255-g)*((t-{fade_start:.2f})/{fade_duration:.2f}), g)':"
+                f"b='if(between(t,{fade_start:.2f},{fade_end:.2f}), "
+                f"b+(255-b)*((t-{fade_start:.2f})/{fade_duration:.2f}), b)'"
+            )
             
             # Write with video fade effect - force re-encoding to apply filter
             final_clip.write_videofile(
@@ -485,6 +512,9 @@ class VideoProcessor:
         final_clip.close()
         for clip in clips:
             clip.close()
+        
+        # Clean up any MoviePy temporary files in the project root
+        self._cleanup_moviepy_temp_files()
         
         return output_path
     
@@ -551,6 +581,9 @@ class VideoProcessor:
         # Clean up
         final_clip.close()
         clip.close()
+        
+        # Clean up any MoviePy temporary files in the project root
+        self._cleanup_moviepy_temp_files()
         
         return output_path
     
@@ -834,8 +867,19 @@ class VideoProcessor:
             # Calculate fade start time
             fade_start = final_clip.duration - fade_duration
             
-            # Build ffmpeg filter string for video fade-out only
-            video_filter = f"fade=t=out:st={fade_start:.2f}:d={fade_duration:.2f}"
+            # Build ffmpeg filter string for video fade-out to white
+            # Use geq filter to blend white (255,255,255) into the video over time
+            # Formula: blend each RGB channel towards 255 based on fade progress
+            fade_end = final_clip.duration
+            video_filter = (
+                f"geq="
+                f"r='if(between(t,{fade_start:.2f},{fade_end:.2f}), "
+                f"r+(255-r)*((t-{fade_start:.2f})/{fade_duration:.2f}), r)':"
+                f"g='if(between(t,{fade_start:.2f},{fade_end:.2f}), "
+                f"g+(255-g)*((t-{fade_start:.2f})/{fade_duration:.2f}), g)':"
+                f"b='if(between(t,{fade_start:.2f},{fade_end:.2f}), "
+                f"b+(255-b)*((t-{fade_start:.2f})/{fade_duration:.2f}), b)'"
+            )
             
             # Write with video fade effect - force re-encoding to apply filter
             final_clip.write_videofile(
@@ -864,7 +908,6 @@ class VideoProcessor:
             clip.close()
         
         # Clean up temporary image files
-        import os
         for tmp_file in temp_files:
             try:
                 if os.path.exists(tmp_file):
@@ -872,7 +915,26 @@ class VideoProcessor:
             except Exception:
                 pass  # Ignore cleanup errors
         
+        # Clean up any MoviePy temporary files in the project root
+        self._cleanup_moviepy_temp_files()
+        
         return output_path
+    
+    def _cleanup_moviepy_temp_files(self):
+        """Clean up MoviePy temporary files that may have been created in the project root."""
+        try:
+            project_root = Path(__file__).parent.parent
+            # Find all TEMP_MPY files in project root
+            temp_files = list(project_root.glob('*TEMP_MPY*.mp4'))
+            for temp_file in temp_files:
+                try:
+                    if temp_file.exists():
+                        temp_file.unlink()
+                        print(f"Cleaned up temporary file: {temp_file.name}")
+                except Exception:
+                    pass  # Ignore cleanup errors
+        except Exception:
+            pass  # Ignore cleanup errors
 
 
 def main():

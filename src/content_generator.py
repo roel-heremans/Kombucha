@@ -52,6 +52,251 @@ class ContentGenerator:
         
         ensure_output_dirs()
     
+    def _load_used_assets(self) -> Dict[str, set]:
+        """
+        Load all previously used assets from metadata files.
+        
+        Returns:
+            Dictionary with sets of used assets:
+            - 'images': set of image paths
+            - 'videos': set of video paths
+            - 'quotes': set of quote texts
+            - 'health_benefits': set of health benefit texts
+            - 'music': set of music file paths
+        """
+        used_assets = {
+            'images': set(),
+            'videos': set(),
+            'quotes': set(),
+            'health_benefits': set(),
+            'music': set()
+        }
+        
+        # Load feed post metadata
+        feed_metadata_dir = self.output_base_path / 'feed_posts'
+        if feed_metadata_dir.exists():
+            for metadata_file in feed_metadata_dir.glob('*_metadata.json'):
+                try:
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+                        
+                        # Track image sources
+                        image_source = metadata.get('image_source', '')
+                        if image_source and image_source not in ('quote_card_from_collection', 'quote_card_generated'):
+                            # It's an actual image path
+                            used_assets['images'].add(image_source)
+                        
+                        # Track quotes if available
+                        if 'quote' in metadata:
+                            used_assets['quotes'].add(metadata['quote'])
+                except Exception:
+                    pass  # Skip invalid metadata files
+        
+        # Load reel metadata
+        reel_metadata_dir = self.output_base_path / 'reels'
+        if reel_metadata_dir.exists():
+            for metadata_file in reel_metadata_dir.glob('*_metadata.json'):
+                try:
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+                        
+                        # Track video sources
+                        video_sources = metadata.get('video_sources', [])
+                        for video_source in video_sources:
+                            used_assets['videos'].add(video_source)
+                        
+                        # Track image sources
+                        image_sources = metadata.get('image_sources', [])
+                        for image_source in image_sources:
+                            used_assets['images'].add(image_source)
+                        
+                        # Track quotes
+                        quote = metadata.get('quote')
+                        if quote:
+                            used_assets['quotes'].add(quote)
+                        
+                        # Track health benefits
+                        health_benefit = metadata.get('health_benefit')
+                        if health_benefit:
+                            # Normalize by removing newlines and extra spaces
+                            normalized = ' '.join(health_benefit.split())
+                            used_assets['health_benefits'].add(normalized)
+                        
+                        # Track music (if stored in metadata)
+                        music = metadata.get('music')
+                        if music:
+                            used_assets['music'].add(music)
+                except Exception:
+                    pass  # Skip invalid metadata files
+        
+        return used_assets
+    
+    def _select_unused_asset(self, available_assets: List[Path], used_assets: set, asset_type: str = 'file') -> Optional[Path]:
+        """
+        Select an asset that hasn't been used before.
+        
+        Args:
+            available_assets: List of available asset paths.
+            used_assets: Set of already-used asset paths (can be strings or Paths).
+            asset_type: Type of asset ('file' or 'path').
+        
+        Returns:
+            Path to unused asset, or None if all are used.
+        """
+        if not available_assets:
+            return None
+        
+        # Convert used_assets to normalized paths for comparison
+        used_paths = set()
+        for p in used_assets:
+            try:
+                if isinstance(p, (str, Path)):
+                    used_paths.add(str(Path(p).resolve()))
+                else:
+                    used_paths.add(str(p))
+            except Exception:
+                # If resolve fails, use string representation
+                used_paths.add(str(p))
+        
+        # Filter out used assets
+        unused_assets = []
+        for asset in available_assets:
+            try:
+                asset_path = str(asset.resolve()) if isinstance(asset, Path) else str(asset)
+                if asset_path not in used_paths:
+                    unused_assets.append(asset)
+            except Exception:
+                # If resolve fails, use string comparison
+                asset_str = str(asset)
+                if asset_str not in used_paths:
+                    unused_assets.append(asset)
+        
+        # If all assets are used, reset and use all available (allow reuse)
+        if not unused_assets:
+            print(f"Warning: All {asset_type} assets have been used. Resetting and allowing reuse.")
+            unused_assets = available_assets
+        
+        # Select randomly from unused assets
+        return random.choice(unused_assets) if unused_assets else None
+    
+    def _select_unused_quote(self, used_quotes: set) -> Optional[str]:
+        """
+        Select a quote that hasn't been used before.
+        
+        Args:
+            used_quotes: Set of already-used quote texts.
+        
+        Returns:
+            Unused quote text, or None if all are used.
+        """
+        try:
+            from .quote_generator import QuoteGenerator
+            quote_gen = QuoteGenerator()
+            
+            # Load all quotes from the quotes file
+            quotes_file = self.assets_base_path / '03_kombucha_quotes' / 'quotes.txt'
+            if not quotes_file.exists():
+                # Fallback to random quote
+                return quote_gen.get_random_quote()
+            
+            all_quotes = []
+            with open(quotes_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        all_quotes.append(line)
+            
+            if not all_quotes:
+                # Fallback to random quote
+                return quote_gen.get_random_quote()
+            
+            # Filter out used quotes
+            unused_quotes = [q for q in all_quotes if q not in used_quotes]
+            
+            # If all quotes are used, reset and use all available
+            if not unused_quotes:
+                print("Warning: All quotes have been used. Resetting and allowing reuse.")
+                unused_quotes = all_quotes
+            
+            return random.choice(unused_quotes) if unused_quotes else None
+        except Exception as e:
+            print(f"Warning: Could not load quotes: {e}")
+            # Fallback to random quote
+            try:
+                from .quote_generator import QuoteGenerator
+                quote_gen = QuoteGenerator()
+                return quote_gen.get_random_quote()
+            except Exception:
+                return None
+    
+    def _select_unused_health_benefit(self, theme_name: str, used_benefits: set) -> Optional[str]:
+        """
+        Select a health benefit/key point that hasn't been used before.
+        
+        Args:
+            theme_name: Name of the theme.
+            used_benefits: Set of already-used health benefit texts.
+        
+        Returns:
+            Unused health benefit text, or None if all are used.
+        """
+        # Try to get key points from JSON first
+        json_content = self.pdf_processor.load_processed_content(theme_name)
+        if json_content and 'summary' in json_content:
+            all_key_points = json_content['summary'].get('combined_key_points', [])
+            # Also check per-PDF key points
+            for pdf_data in json_content.get('pdfs', []):
+                all_key_points.extend(pdf_data.get('key_points', []))
+        else:
+            # Fallback: get from PDFs
+            pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
+            if pdf_text:
+                all_key_points = self.pdf_processor.extract_key_points(pdf_text, max_points=20)
+            else:
+                all_key_points = []
+        
+        if not all_key_points:
+            return None
+        
+        # Normalize used benefits for comparison
+        normalized_used = {' '.join(b.split()) for b in used_benefits}
+        
+        # Filter out used benefits
+        unused_benefits = [
+            benefit for benefit in all_key_points
+            if ' '.join(benefit.split()) not in normalized_used
+        ]
+        
+        # If all benefits are used, reset and use all available
+        if not unused_benefits:
+            print("Warning: All health benefits have been used. Resetting and allowing reuse.")
+            unused_benefits = all_key_points
+        
+        if not unused_benefits:
+            return None
+        
+        # Select randomly and ensure it fits on screen
+        selected = random.choice(unused_benefits)
+        
+        # Truncate if too long (max 200 chars for video)
+        if len(selected) > 200:
+            truncated = selected[:200]
+            last_period = truncated.rfind('.')
+            last_exclamation = truncated.rfind('!')
+            last_question = truncated.rfind('?')
+            last_sentence_end = max(last_period, last_exclamation, last_question)
+            
+            if last_sentence_end > 50:
+                selected = selected[:last_sentence_end + 1].strip()
+            else:
+                last_space = truncated.rfind(' ')
+                if last_space > 150:
+                    selected = selected[:last_space].strip() + "..."
+                else:
+                    selected = truncated.strip() + "..."
+        
+        return selected.strip()
+    
     def _validate_path(self, path: Path, path_type: str = "file") -> Path:
         """
         Validate that a path exists and convert relative paths to absolute.
@@ -149,14 +394,21 @@ class ContentGenerator:
         Returns:
             Dictionary with paths to generated content and caption file.
         """
-        # Get quote for text overlay (always try to get a quote)
+        # Load previously used assets to avoid duplicates
+        used_assets = self._load_used_assets()
+        
+        # Get quote for text overlay (prefer unused quotes)
         quote_text = None
-        try:
-            from .quote_generator import QuoteGenerator
-            quote_gen = QuoteGenerator()
-            quote_text = quote_gen.get_random_quote()
-        except Exception as e:
-            print(f"Warning: Could not load quote: {e}")
+        if use_quote:
+            quote_text = self._select_unused_quote(used_assets['quotes'])
+        else:
+            # Still try to get a quote for overlay even if not using for card
+            try:
+                from .quote_generator import QuoteGenerator
+                quote_gen = QuoteGenerator()
+                quote_text = quote_gen.get_random_quote()
+            except Exception as e:
+                print(f"Warning: Could not load quote: {e}")
         
         # Get PDF content for caption only if not using quotes or if explicitly requested
         pdf_text = ""
@@ -220,11 +472,15 @@ class ContentGenerator:
             )
             image_source = "quote_card_generated"
         else:
-            # Select image
+            # Select image (prefer unused images)
             if image_path is None:
                 if not images:
                     raise ValueError(f"No images found for theme '{theme_name}'. Place images in assets/01_images/")
-                image_path = random.choice(images)
+                # Select from unused images if available
+                image_path = self._select_unused_asset(images, used_assets['images'])
+                if image_path is None:
+                    # Fallback to random if selection failed
+                    image_path = random.choice(images)
             else:
                 # User provided a specific image path - validate it exists
                 image_path = self._validate_path(image_path, 'file')
@@ -263,6 +519,7 @@ class ContentGenerator:
             'theme': theme_name,
             'type': 'feed',
             'image_source': image_source,
+            'quote': quote_text if quote_text else None,
             'generated_at': datetime.now().isoformat(),
             'caption_data': caption_data,
             'output_image': str(processed_image_path),
@@ -310,6 +567,9 @@ class ContentGenerator:
         if not self.video_processor:
             raise ValueError("Video processor not available. Please install moviepy.")
         
+        # Load previously used assets to avoid duplicates
+        used_assets = self._load_used_assets()
+        
         # Get videos
         videos = self.find_assets(theme_name, 'videos')
         if not videos and not video_paths:
@@ -320,75 +580,47 @@ class ContentGenerator:
         if not images and not image_paths:
             raise ValueError(f"No images found in assets/01_images/")
         
-        # Select videos
+        # Select videos (prefer unused videos)
         if video_paths is None:
-            selected_videos = [random.choice(videos)] if videos else []
+            if videos:
+                selected_video = self._select_unused_asset(videos, used_assets['videos'])
+                selected_videos = [selected_video] if selected_video else [random.choice(videos)]
+            else:
+                selected_videos = []
         else:
             # Validate provided video paths
             selected_videos = [self._validate_path(vp, 'file') for vp in video_paths]
         
-        # Select images
+        # Select images (prefer unused images)
         if image_paths is None:
-            selected_images = [random.choice(images)] if images else []
+            if images:
+                selected_image = self._select_unused_asset(images, used_assets['images'])
+                selected_images = [selected_image] if selected_image else [random.choice(images)]
+            else:
+                selected_images = []
         else:
             # Validate provided image paths
             selected_images = [self._validate_path(ip, 'file') for ip in image_paths]
         
-        # Get PDF content for health benefits
+        # Get PDF content for health benefits (prefer unused benefits)
         pdf_text = ""
         health_benefit_text = None
         if use_pdf_content:
-            # Prioritize refined key points from JSON (already human-friendly and accessible)
-            json_content = self.pdf_processor.load_processed_content(theme_name)
-            using_json = json_content is not None and 'summary' in json_content
+            # Select an unused health benefit
+            benefit_text = self._select_unused_health_benefit(theme_name, used_assets['health_benefits'])
             
-            if using_json:
-                # Use a random key point from JSON for variety (all are already refined)
-                benefit_text = self.pdf_processor.get_random_key_point_from_json(theme_name)
-                if benefit_text:
-                    # Get all key points for caption generation context
+            if benefit_text:
+                health_benefit_text = benefit_text
+                # Get all key points for caption generation context
+                json_content = self.pdf_processor.load_processed_content(theme_name)
+                if json_content and 'summary' in json_content:
                     all_key_points = self.pdf_processor.get_key_points_from_json(theme_name, max_points=5)
                     pdf_text = ". ".join(all_key_points[:3]) + "." if all_key_points else ""
                 else:
-                    benefit_text = None
-            else:
-                # Fallback: get combined text and extract key points (raw extraction)
-                pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
-                if pdf_text:
-                    key_points = self.pdf_processor.extract_key_points(pdf_text, max_points=1)
-                    benefit_text = key_points[0] if key_points else None
-                else:
-                    benefit_text = None
-            
-            if benefit_text:
-                # Use the refined key point from JSON (already optimized for readability)
-                # or the extracted one from PDFs
+                    pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
                 
-                # JSON key points are already refined to be short and accessible
-                # But we still need to ensure they fit on screen (max 200 chars for video)
-                if len(benefit_text) > 200:
-                    # Smart truncation: find last sentence boundary
-                    truncated = benefit_text[:200]
-                    last_period = truncated.rfind('.')
-                    last_exclamation = truncated.rfind('!')
-                    last_question = truncated.rfind('?')
-                    last_sentence_end = max(last_period, last_exclamation, last_question)
-                    
-                    if last_sentence_end > 50:  # Found a reasonable sentence end
-                        health_benefit_text = benefit_text[:last_sentence_end + 1].strip()
-                    else:
-                        # No sentence end found, truncate at word boundary
-                        last_space = truncated.rfind(' ')
-                        if last_space > 150:
-                            health_benefit_text = benefit_text[:last_space].strip() + "..."
-                        else:
-                            health_benefit_text = truncated.strip() + "..."
-                else:
-                    health_benefit_text = benefit_text.strip()
-                
-                # Only apply additional LLM refinement if explicitly requested AND not using JSON
-                # (JSON points are already refined, so double refinement is usually unnecessary)
-                if use_llm_refinement and not using_json and health_benefit_text:
+                # Only apply additional LLM refinement if explicitly requested
+                if use_llm_refinement and health_benefit_text:
                     try:
                         refined = self.ai_generator.refine_health_benefit(
                             health_benefit_text,
@@ -405,19 +637,59 @@ class ContentGenerator:
                             health_benefit_text = refined['pt']
                     except Exception as e:
                         print(f"Warning: LLM refinement failed, using original text: {e}")
-                elif using_json:
-                    # JSON key points are already refined, so we can use them directly
+                else:
                     print(f"Using refined key points from JSON (already optimized for accessibility)")
+            else:
+                # Fallback if no unused benefits available
+                json_content = self.pdf_processor.load_processed_content(theme_name)
+                using_json = json_content is not None and 'summary' in json_content
+                
+                if using_json:
+                    benefit_text = self.pdf_processor.get_random_key_point_from_json(theme_name)
+                    if benefit_text:
+                        all_key_points = self.pdf_processor.get_key_points_from_json(theme_name, max_points=5)
+                        pdf_text = ". ".join(all_key_points[:3]) + "." if all_key_points else ""
+                    else:
+                        benefit_text = None
+                else:
+                    pdf_text = self.pdf_processor.get_combined_text(theme_name, max_pages_per_pdf=5)
+                    if pdf_text:
+                        key_points = self.pdf_processor.extract_key_points(pdf_text, max_points=1)
+                        benefit_text = key_points[0] if key_points else None
+                    else:
+                        benefit_text = None
+                
+                if benefit_text:
+                    if len(benefit_text) > 200:
+                        truncated = benefit_text[:200]
+                        last_period = truncated.rfind('.')
+                        last_exclamation = truncated.rfind('!')
+                        last_question = truncated.rfind('?')
+                        last_sentence_end = max(last_period, last_exclamation, last_question)
+                        
+                        if last_sentence_end > 50:
+                            health_benefit_text = benefit_text[:last_sentence_end + 1].strip()
+                        else:
+                            last_space = truncated.rfind(' ')
+                            if last_space > 150:
+                                health_benefit_text = benefit_text[:last_space].strip() + "..."
+                            else:
+                                health_benefit_text = truncated.strip() + "..."
+                    else:
+                        health_benefit_text = benefit_text.strip()
         
-        # Get quote
+        # Get quote (prefer unused quotes)
         quote_text = None
         if use_quote:
-            try:
-                from .quote_generator import QuoteGenerator
-                quote_gen = QuoteGenerator()
-                quote_text = quote_gen.get_random_quote()
-            except Exception as e:
-                print(f"Warning: Could not load quote: {e}")
+            quote_text = self._select_unused_quote(used_assets['quotes'])
+            if quote_text is None:
+                # Fallback if no unused quotes available
+                try:
+                    from .quote_generator import QuoteGenerator
+                    quote_gen = QuoteGenerator()
+                    quote_text = quote_gen.get_random_quote()
+                except Exception as e:
+                    print(f"Warning: Could not load quote: {e}")
         
         # Generate caption
         caption_data = self.ai_generator.generate_caption(
@@ -503,13 +775,27 @@ class ContentGenerator:
         if not videos:
             raise ValueError(f"No videos found in theme '{theme_name}'")
         
-        # Select videos
+        # Load previously used assets to avoid duplicates
+        used_assets = self._load_used_assets()
+        
+        # Select videos (prefer unused videos)
         if video_paths is None:
-            if len(videos) < num_clips:
-                # Repeat videos if not enough
-                selected_videos = (videos * ((num_clips // len(videos)) + 1))[:num_clips]
+            # Filter out used videos
+            unused_videos = [
+                v for v in videos
+                if str(v.resolve()) not in {str(Path(p).resolve()) for p in used_assets['videos']}
+            ]
+            
+            # If all videos are used, reset and use all available
+            if not unused_videos:
+                print("Warning: All videos have been used. Resetting and allowing reuse.")
+                unused_videos = videos
+            
+            if len(unused_videos) < num_clips:
+                # Repeat videos if not enough unused ones
+                selected_videos = (unused_videos * ((num_clips // len(unused_videos)) + 1))[:num_clips]
             else:
-                selected_videos = random.sample(videos, num_clips)
+                selected_videos = random.sample(unused_videos, num_clips)
         else:
             # Validate provided video paths
             selected_videos = [self._validate_path(vp, 'file') for vp in video_paths]

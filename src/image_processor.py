@@ -163,7 +163,10 @@ class ImageProcessor:
         
         if max_width is None:
             # Since we're centering text, use full width minus padding on both sides
-            max_width = image.width - (padding * 2)
+            # Add extra safety margin to prevent text from being cut off at edges
+            # Font rendering can have margins and kerning, so we need very conservative padding
+            # Use 80px total safety margin (40px on each side) to ensure no cutoff
+            max_width = image.width - (padding * 2) - 80  # Extra 80px safety margin for font rendering
         
         # Load font - ensure we get a scalable font for proper sizing
         font = self.load_font(
@@ -230,36 +233,102 @@ class ImageProcessor:
         # Use all_parts as sentences for wrapping
         sentences = all_parts
         
-        # Wrap each sentence (split long sentences if needed)
-        # Use a more accurate character width estimation
-        # Average character width is approximately font_size * 0.5-0.6 for most fonts
-        # Use a conservative estimate to ensure proper wrapping
-        avg_char_width = font_size * 0.55
-        chars_per_line = max(30, int(max_width / avg_char_width)) if avg_char_width > 0 else 50
+        # Create draw object for measuring text width
+        # We'll create a temporary draw object for measurements
+        temp_img = Image.new('RGB', (image.width, image.height))
+        draw = ImageDraw.Draw(temp_img)
         
+        # Wrap each sentence using actual pixel width measurements
+        # This ensures text fits properly within the image width
         for sentence in sentences:
-            # Always wrap sentences to ensure proper line breaking
-            # Use textwrap which handles word boundaries properly
-            # break_long_words=False ensures we break at word boundaries
-            wrapped = textwrap.wrap(
-                sentence, 
-                width=chars_per_line, 
-                break_long_words=False, 
-                break_on_hyphens=False,
-                expand_tabs=False
-            )
-            if wrapped:
-                wrapped_lines.extend(wrapped)
-            else:
-                # If wrapping fails, add the sentence as-is
-                wrapped_lines.append(sentence)
+            # Use binary search approach to find the right character count per line
+            # that fits within max_width pixels
+            words = sentence.split()
+            if not words:
+                continue
+            
+            current_line = []
+            for word in words:
+                # Test if adding this word would exceed max_width
+                # Use a more conservative max_width during wrapping (subtract 20px for safety)
+                safe_max_width = max_width - 20  # Extra 20px safety during wrapping
+                test_line = ' '.join(current_line + [word])
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                test_width = bbox[2] - bbox[0]
+                
+                if test_width <= safe_max_width:
+                    # Word fits, add it to current line
+                    current_line.append(word)
+                else:
+                    # Word doesn't fit, save current line and start new one
+                    if current_line:
+                        wrapped_lines.append(' '.join(current_line))
+                    # If single word is too long, we need to break it
+                    if len(word) > 0:
+                        # Check if word itself exceeds max_width (use safe_max_width)
+                        word_bbox = draw.textbbox((0, 0), word, font=font)
+                        word_width = word_bbox[2] - word_bbox[0]
+                        if word_width > safe_max_width:
+                            # Word is too long, break it character by character
+                            chars = list(word)
+                            temp_word = ''
+                            for char in chars:
+                                test_char = temp_word + char
+                                char_bbox = draw.textbbox((0, 0), test_char, font=font)
+                                char_width = char_bbox[2] - char_bbox[0]
+                                if char_width <= safe_max_width:
+                                    temp_word = test_char
+                                else:
+                                    if temp_word:
+                                        wrapped_lines.append(temp_word)
+                                    temp_word = char
+                            if temp_word:
+                                current_line = [temp_word]
+                            else:
+                                current_line = []
+                        else:
+                            current_line = [word]
+                    else:
+                        current_line = []
+            
+            # Add remaining line
+            if current_line:
+                wrapped_lines.append(' '.join(current_line))
         
-        # Calculate text dimensions
-        draw = ImageDraw.Draw(image)
+        # Verify all lines fit within max_width and recalculate dimensions
         line_heights = []
+        verified_lines = []
         for line in wrapped_lines:
             bbox = draw.textbbox((0, 0), line, font=font)
-            line_heights.append(bbox[3] - bbox[1])
+            line_width = bbox[2] - bbox[0]
+            line_height = bbox[3] - bbox[1]
+            
+            # If line exceeds max_width (with safety margin), try to break it further
+            # Use even more conservative check here
+            if line_width > (max_width - 30):  # 30px safety margin for verification
+                # Break the line more aggressively
+                words = line.split()
+                if len(words) > 1:
+                    # Try splitting in half
+                    mid = len(words) // 2
+                    first_half = ' '.join(words[:mid])
+                    second_half = ' '.join(words[mid:])
+                    verified_lines.append(first_half)
+                    verified_lines.append(second_half)
+                    # Calculate heights for both halves
+                    bbox1 = draw.textbbox((0, 0), first_half, font=font)
+                    bbox2 = draw.textbbox((0, 0), second_half, font=font)
+                    line_heights.append(bbox1[3] - bbox1[1])
+                    line_heights.append(bbox2[3] - bbox2[1])
+                else:
+                    # Single word that's too long - keep it but warn
+                    verified_lines.append(line)
+                    line_heights.append(line_height)
+            else:
+                verified_lines.append(line)
+                line_heights.append(line_height)
+        
+        wrapped_lines = verified_lines
         
         total_height = sum(line_heights) + (len(wrapped_lines) - 1) * 10
         
@@ -278,7 +347,7 @@ class ImageProcessor:
         text_color = self.hex_to_rgb(self.brand_colors.get('text', '#000000'))
         bg_color = self.hex_to_rgb(self.brand_colors.get('background', '#ffffff'))
         
-        # Draw background rectangle - center it horizontally
+        # Draw background rectangle - center it horizontally with bounds checking
         rect_y1 = max(0, y_start - padding // 2)
         rect_y2 = min(image.height, y_start + total_height + padding // 2)
         # Calculate max line width to center the background rectangle
@@ -287,20 +356,93 @@ class ImageProcessor:
             bbox = draw.textbbox((0, 0), line, font=font)
             line_width = bbox[2] - bbox[0]
             max_line_width = max(max_line_width, line_width)
-        rect_x1 = (image.width - max_line_width) // 2 - padding
-        rect_x2 = (image.width + max_line_width) // 2 + padding
+        
+        # Ensure background rectangle stays within bounds
+        rect_x1 = max(padding, (image.width - max_line_width) // 2 - padding)
+        rect_x2 = min(image.width - padding, (image.width + max_line_width) // 2 + padding)
+        
+        # Ensure rectangle is at least as wide as the text area
+        if rect_x2 - rect_x1 < max_line_width + (padding * 2):
+            rect_x1 = max(padding, (image.width - max_line_width) // 2 - padding)
+            rect_x2 = min(image.width - padding, rect_x1 + max_line_width + (padding * 2))
         overlay_draw.rectangle(
             [(rect_x1, rect_y1), (rect_x2, rect_y2)],
             fill=(*bg_color, 200)  # Semi-transparent
         )
         
-        # Draw text - center each line horizontally
+        # Draw text - center each line horizontally with strict bounds checking
+        # Use very conservative padding to account for font rendering margins and kerning
         y_offset = y_start
+        # Very generous padding to prevent any character cutoff
+        # Font rendering can have up to 5-10px margin per side, plus kerning
+        min_x_padding = padding + 50  # Minimum padding from left edge (50px safety)
+        max_x_padding = image.width - padding - 50  # Maximum x position (50px safety)
+        
         for i, line in enumerate(wrapped_lines):
-            # Calculate text width to center it horizontally
+            # Calculate text width - add generous safety margin for font rendering
             bbox = draw.textbbox((0, 0), line, font=font)
             line_width = bbox[2] - bbox[0]
-            x = (image.width - line_width) // 2  # Center horizontally
+            # Add larger safety margin to measured width (fonts can render wider due to kerning/margins)
+            line_width_with_margin = line_width + 10  # 10px safety margin for font rendering/kerning
+            
+            x = (image.width - line_width_with_margin) // 2  # Center horizontally
+            
+            # Strict bounds checking - ensure text stays well within bounds
+            # Check if text would extend beyond left edge
+            if x < min_x_padding:
+                x = min_x_padding
+            # Check if text would extend beyond right edge (using margin-adjusted width)
+            if x + line_width_with_margin > max_x_padding:
+                x = max_x_padding - line_width_with_margin
+                # If still too wide, we need to break it further
+                if x < min_x_padding:
+                    x = min_x_padding
+                    # Calculate available width with generous safety margins
+                    available_width = max_x_padding - min_x_padding - 20  # Extra 20px safety
+                    # Truncate line if absolutely necessary (last resort)
+                    if line_width > available_width:
+                        # Measure character by character to fit within available width
+                        chars = list(line)
+                        fitting_chars = []
+                        test_text = ''
+                        for char in chars:
+                            test_text += char
+                            test_bbox = draw.textbbox((0, 0), test_text, font=font)
+                            test_width = test_bbox[2] - test_bbox[0] + 10  # Add margin
+                            if test_width <= available_width:
+                                fitting_chars.append(char)
+                            else:
+                                break
+                        line = ''.join(fitting_chars) + '...' if len(fitting_chars) < len(chars) else ''.join(fitting_chars)
+                        # Recalculate width
+                        bbox = draw.textbbox((0, 0), line, font=font)
+                        line_width = bbox[2] - bbox[0]
+                        line_width_with_margin = line_width + 10
+                        x = min_x_padding
+            
+            # Final strict bounds check before drawing - absolute minimums
+            absolute_min_x = 50  # Absolute minimum from left edge
+            absolute_max_x = image.width - 50  # Absolute minimum from right edge
+            
+            if x < absolute_min_x:
+                x = absolute_min_x
+            if x + line_width_with_margin > absolute_max_x:
+                x = absolute_max_x - line_width_with_margin
+                # If still doesn't fit, reduce line further
+                if x < absolute_min_x:
+                    x = absolute_min_x
+                    # Re-measure and truncate if needed
+                    available = absolute_max_x - absolute_min_x - 20
+                    if line_width > available:
+                        # Truncate more aggressively
+                        bbox = draw.textbbox((0, 0), line[:len(line)//2], font=font)
+                        half_width = bbox[2] - bbox[0] + 10
+                        if half_width <= available:
+                            line = line[:len(line)//2] + '...'
+                            bbox = draw.textbbox((0, 0), line, font=font)
+                            line_width = bbox[2] - bbox[0]
+                            line_width_with_margin = line_width + 10
+            
             overlay_draw.text((x, y_offset), line, font=font, fill=(*text_color, 255))
             y_offset += line_heights[i] + 10
         

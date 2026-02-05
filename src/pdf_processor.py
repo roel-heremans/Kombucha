@@ -280,8 +280,8 @@ def main():
     """Test function."""
     processor = PDFProcessor()
     
-    # Test with kombucha_benefits theme
-    theme = 'kombucha_benefits'
+    # Test with kombucha_benefits theme (using numbered version)
+    theme = '05_kombucha_benefits'
     pdfs = processor.find_pdfs(theme)
     
     if pdfs:

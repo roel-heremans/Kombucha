@@ -50,6 +50,14 @@ class PDFPreprocessor:
         Returns:
             Dictionary with preprocessing results.
         """
+        # Validate theme name - must start with number (04-07)
+        if not theme_name.startswith(('04_', '05_', '06_', '07_')):
+            raise ValueError(
+                f"Invalid theme name: {theme_name}. "
+                f"Theme names must start with 04_, 05_, 06_, or 07_ "
+                f"(e.g., '07_kombucha_research', not 'kombucha_research')"
+            )
+        
         theme_path = self.assets_base_path / theme_name
         json_path = theme_path / 'content.json'
         
@@ -145,6 +153,8 @@ class PDFPreprocessor:
         }
         
         # Save to JSON
+        # Note: If creating README files in assets subfolders, use _README.md (not README.md)
+        # so they appear at the top when listing directories
         theme_path.mkdir(parents=True, exist_ok=True)
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
