@@ -98,10 +98,6 @@ island_bottom = icon_cy + 21 * 2.2   # island lowest point + scale
 rh_y          = int(island_bottom) + 38
 draw_spaced("REAL HEALTH", font_rh, W // 2, rh_y, PRIMARY, spacing=10)
 
-rh_h      = font_rh.getbbox("A")[3] - font_rh.getbbox("A")[1]
-kombucha_y = rh_y + rh_h + 18
-draw_spaced("KOMBUCHA", font_kb, W // 2, kombucha_y, ACCENT, spacing=12)
-
 # ── Save ──────────────────────────────────────────────────────────────────────
 OUT = "/Users/roel.heremans/Documents/PersonalRepos/Kombucha/assets/design-logos/logo_lowres.png"
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
