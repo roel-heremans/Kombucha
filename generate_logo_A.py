@@ -78,6 +78,13 @@ raw_island = [
 island_pts = [(icon_cx + rx * 2.2, icon_cy + ry * 2.2) for rx, ry in raw_island]
 draw.polygon(island_pts, fill=PRIMARY)
 
+# ── Ponta do Sol marker (brewery location, ~36% from west, ~78% from north) ───
+# Geo: 17.08°W, 32.67°N → normalized island coords ≈ (-12, 11) at scale 2.2
+dot_x = icon_cx + (-12) * 2.2
+dot_y = icon_cy +  11   * 2.2
+dot_r = 3   # small radius in px at 800px canvas
+draw.ellipse([dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r], fill=ACCENT)
+
 # ── Text: flows directly below the island ────────────────────────────────────
 def draw_spaced(text, font, cx, y, color, spacing=8):
     widths = [font.getbbox(c)[2] - font.getbbox(c)[0] for c in text]
