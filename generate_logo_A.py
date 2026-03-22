@@ -103,7 +103,7 @@ kombucha_y = rh_y + rh_h + 18
 draw_spaced("KOMBUCHA", font_kb, W // 2, kombucha_y, ACCENT, spacing=12)
 
 # ── Save ──────────────────────────────────────────────────────────────────────
-OUT = "/Users/roel.heremans/Documents/PersonalRepos/Kombucha/assets/design-logos/logo_variant_A.png"
+OUT = "/Users/roel.heremans/Documents/PersonalRepos/Kombucha/assets/design-logos/logo_lowres.png"
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 img.save(OUT, "PNG")
 print(f"Saved: {OUT}")
