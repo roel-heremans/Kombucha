@@ -77,6 +77,9 @@ FLAVOURS = {
 }
 
 HEXAGONAL_WATER_IMG = "assets/water-colors/07-hexagonal-water.png"
+LOGO_PATH           = "assets/design-logos/logo_transparent_highres.png"
+# Pre-measured content bounding box of the transparent logo (non-transparent pixels)
+LOGO_CONTENT_BBOX   = (274, 326, 1727, 1266)   # 1453 × 940 px of actual content
 OUTPUT_DIR = "output/labels"
 
 
@@ -110,79 +113,65 @@ def build_front_label(key: str, cfg: dict) -> Image.Image:
     c    = cfg["colors"]
     s    = SAFE
 
-    # --- Fonts ---
-    f_real_health = load_font(217, bold=True)
-    f_kombucha    = load_font(158, bold=True)
-    f_flavour     = load_font(100, bold=True)
-    f_tagline     = load_font(58,  italic=True)
-    f_qty         = load_font(42)
+    f_kombucha = load_font(58, bold=True)
+    f_flavour  = load_font(70, bold=True)
+    f_tagline  = load_font(28, italic=True)
+    f_qty      = load_font(26)
+
+    cx = FRONT_W // 2
 
     # --- 1. Flavour colour stripe — top ---
     draw.rectangle([0, 0, FRONT_W, s - 1], fill=c["mid"])
 
-    # --- 2. Logo zone ---
-    logo_top   = s + 10
-    sb_cx      = FRONT_W // 2
-    sb_cy      = logo_top + 135
-    draw_sunburst(draw, sb_cx, sb_cy,
-                  r_outer_long=120, r_outer_short=88, r_inner=38,
-                  ray_count=30, color=BROWN, bg=CREAM)
-    draw_island(draw, sb_cx, sb_cy, w=72, h=28, tilt_deg=4, color=BROWN)
+    # --- 2. Logo image — scale to 55% of live width to leave room for KOMBUCHA ---
+    logo         = Image.open(LOGO_PATH).convert("RGBA")
+    logo_content = logo.crop(LOGO_CONTENT_BBOX)           # 1453 × 940 px
+    target_w     = int((FRONT_W - 2 * s) * 0.37)         # ~305 px (1/3 smaller)
+    target_h     = int(target_w * logo_content.height / logo_content.width)
+    logo_scaled  = logo_content.resize((target_w, target_h), Image.LANCZOS)
+    logo_x       = (FRONT_W - target_w) // 2
+    logo_y       = s + 15
+    img.paste(logo_scaled, (logo_x, logo_y), mask=logo_scaled.split()[3])
+    logo_bottom  = logo_y + target_h
 
-    # Diamond rule above REAL HEALTH
-    rule_y1 = sb_cy + 145
-    draw_diamond_rule(draw, sb_cx, rule_y1, width=560, color=AMBER)
-
-    # REAL HEALTH
-    rh_text  = "REAL HEALTH"
-    rh_w     = spaced_text_width(rh_text, f_real_health, spacing=9)
-    rh_x     = sb_cx - rh_w // 2
-    rh_y     = rule_y1 + 14
-    draw_spaced_text(draw, rh_x, rh_y, rh_text, f_real_health, BROWN, spacing=9)
-    rh_h     = f_real_health.getbbox("A")[3]
-
-    # Diamond rule below REAL HEALTH
-    rule_y2  = rh_y + rh_h + 10
-    draw_diamond_rule(draw, sb_cx, rule_y2, width=560, color=AMBER)
-
-    # --- 3. KOMBUCHA ---
+    # --- 3. KOMBUCHA text below logo ---
     kom_text = "KOMBUCHA"
     kom_w    = spaced_text_width(kom_text, f_kombucha, spacing=8)
-    kom_x    = sb_cx - kom_w // 2
-    kom_y    = rule_y2 + 14
+    kom_x    = cx - kom_w // 2
+    kom_y    = logo_bottom + 10
     draw_spaced_text(draw, kom_x, kom_y, kom_text, f_kombucha, AMBER, spacing=8)
-    kom_h    = f_kombucha.getbbox("A")[3]
+    kom_bb      = f_kombucha.getbbox("A")
+    kom_bottom  = kom_y + (kom_bb[3] - kom_bb[1])
 
     # --- 4. Watercolor illustration ---
-    illus_top    = kom_y + kom_h + 12
-    band_height  = 100 + 40 + 20
+    band_height  = 95 + 38 + 20
     stripe_h     = 8
+    illus_top    = kom_bottom + 70
     illus_bottom = FRONT_H - s - stripe_h - band_height
     paste_watercolor(img, cfg["watercolor"],
                      (s + 10, illus_top, FRONT_W - s - 10, illus_bottom))
 
     # --- 5. Flavour band ---
-    band_y = illus_bottom
+    band_y   = illus_bottom
     band_bot = FRONT_H - s - stripe_h
     draw.rectangle([0, band_y, FRONT_W, band_bot], fill=c["band"])
 
     fn_text = cfg["display_name"].upper()
     fn_w    = spaced_text_width(fn_text, f_flavour, spacing=5)
-    fn_x    = sb_cx - fn_w // 2
-    fn_y    = band_y + 10
+    fn_x    = cx - fn_w // 2
+    fn_y    = band_y + 12
     draw_spaced_text(draw, fn_x, fn_y, fn_text, f_flavour, "#FFFFFF", spacing=5)
 
     tg_text = "Handcrafted in Madeira"
     tg_bb   = f_tagline.getbbox(tg_text)
-    tg_w    = tg_bb[2] - tg_bb[0]
-    tg_x    = sb_cx - tg_w // 2
-    tg_y    = fn_y + 105
+    tg_x    = cx - (tg_bb[2] - tg_bb[0]) // 2
+    tg_y    = fn_y + 78
     draw.text((tg_x, tg_y), tg_text, font=f_tagline, fill="#FFEEBB")
 
     # --- 6. Bottom stripe ---
     draw.rectangle([0, band_bot, FRONT_W, FRONT_H], fill=c["mid"])
 
-    # --- 7. Net quantity (bottom-right of live area) ---
+    # --- 7. Net quantity ---
     qty_text = "250 ml e"
     qty_bb   = f_qty.getbbox(qty_text)
     qty_x    = FRONT_W - s - (qty_bb[2] - qty_bb[0]) - 8
@@ -201,72 +190,93 @@ def build_back_label(key: str, cfg: dict) -> Image.Image:
     c    = cfg["colors"]
     s    = SAFE
 
-    # --- Fonts ---
-    f_title  = load_font(22, bold=True)
-    f_body   = load_font(19)
-    f_footer = load_font(19)
+    # --- Fonts — sized to fill the 886px live area ---
+    f_title  = load_font(38, bold=True)
+    f_body   = load_font(26)
+    f_footer = load_font(22)
+    BODY_LINE  = 36   # line height for body text
+    FOOT_LINE  = 30   # line height for footer text
 
-    live_w = BACK_W - 2 * s
-    text_w = live_w - 20
+    text_x = s + 12
+    text_w = BACK_W - 2 * s - 24
 
     # --- 1. Top stripe ---
     draw.rectangle([0, 0, BACK_W, s - 1], fill=c["mid"])
 
-    y = s + 10
+    y = s + 18
 
     # --- 2. Structured Water section ---
+    icon_size = 56
     try:
         icon = Image.open(HEXAGONAL_WATER_IMG).convert("RGB")
-        icon = icon.resize((40, 40), Image.LANCZOS)
-        img.paste(icon, (s + 8, y))
+        icon = icon.resize((icon_size, icon_size), Image.LANCZOS)
+        img.paste(icon, (text_x, y))
     except Exception:
         pass
-    draw.text((s + 56, y + 8), "STRUCTURED WATER",
+    draw.text((text_x + icon_size + 14, y + 8), "STRUCTURED WATER",
               font=f_title, fill=BROWN)
-    y += 48
+    y += icon_size + 14
 
     water_body = (
         "Water filtered through activated carbon and structured "
         "using the UMH Pure Gold energiser — a technical conditioning "
-        "process that restores the water's natural hexagonal molecular "
+        "process that restores the water\u2019s natural hexagonal molecular "
         "arrangement."
     )
     for line in _wrap_text(water_body, f_body, text_w):
-        draw.text((s + 8, y), line, font=f_body, fill="#444444")
-        y += 22
-    y += 8
+        draw.text((text_x, y), line, font=f_body, fill="#444444")
+        y += BODY_LINE
+    y += 18
 
-    draw.line([(s, y), (BACK_W - s, y)], fill="#D9BC8A", width=1)
-    y += 8
+    draw.line([(s, y), (BACK_W - s, y)], fill="#D9BC8A", width=2)
+    y += 18
 
     # --- 3. Ingredients section ---
-    draw.text((s + 8, y), "INGREDIENTS", font=f_title, fill=BROWN)
-    y += 26
+    draw.text((text_x, y), "INGREDIENTS", font=f_title, fill=BROWN)
+    y += 50
 
     full_ingredients = (
         f"{BASE_INGREDIENTS}, {cfg['addition']}. {FOOTNOTE}"
     )
     for line in _wrap_text(full_ingredients, f_body, text_w):
-        draw.text((s + 8, y), line, font=f_body, fill="#444444")
-        y += 22
-    y += 8
+        draw.text((text_x, y), line, font=f_body, fill="#444444")
+        y += BODY_LINE
+    y += 18
 
-    draw.line([(s, y), (BACK_W - s, y)], fill="#D9BC8A", width=1)
-    y += 8
+    draw.line([(s, y), (BACK_W - s, y)], fill="#D9BC8A", width=2)
+    y += 18
 
-    # --- 4. Legal footer ---
+    # --- 4. Nutritional highlights ---
+    draw.text((text_x, y), "PER 250 ml", font=f_title, fill=BROWN)
+    y += 50
+
+    nutrition_lines = [
+        "Energy: ~20 kcal / 84 kJ",
+        "Sugars: ~4 g  (naturally occurring, partially consumed)",
+        "Live probiotic cultures: present",
+        "Alcohol: <0.5% vol  (naturally fermented)",
+    ]
+    for line in nutrition_lines:
+        draw.text((text_x, y), line, font=f_body, fill="#444444")
+        y += BODY_LINE
+    y += 18
+
+    draw.line([(s, y), (BACK_W - s, y)], fill="#D9BC8A", width=2)
+    y += 18
+
+    # --- 5. Legal footer ---
     footer_lines = [
-        "Store refrigerated after opening",
+        "Store refrigerated after opening. Shake gently before serving.",
         "Best before: ............  (DD/MM/YYYY)",
         "Contains live cultures  \u00b7  Naturally fermented <0.5% vol",
         "Real Health Kombucha  \u00b7  Caminho de Jangao 154",
         "9360-523 Ponta do Sol  \u00b7  Madeira, Portugal",
     ]
     for line in footer_lines:
-        draw.text((s + 8, y), line, font=f_footer, fill="#888888")
-        y += 22
+        draw.text((text_x, y), line, font=f_footer, fill="#888888")
+        y += FOOT_LINE
 
-    # --- 5. Bottom stripe ---
+    # --- 6. Bottom stripe ---
     draw.rectangle([0, BACK_H - s, BACK_W, BACK_H], fill=c["mid"])
 
     return img
