@@ -41,6 +41,9 @@ output/**/*
 # Assets (optional - uncomment if you don't want to track assets)
 assets/**/*
 
+# Worktrees
+.worktrees/
+
 # OS
 .DS_Store
 Thumbs.db
