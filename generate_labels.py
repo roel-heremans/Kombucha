@@ -3,12 +3,26 @@ Generate print-ready front + back labels for all Real Health Kombucha flavours.
 Output: output/labels/<flavour>_front.png and _back.png at 896×1133 / 896×956 px (300 DPI, 3 mm bleed).
 """
 import os
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from src.label_utils import (
     load_font, draw_spaced_text, spaced_text_width,
     draw_diamond_rule, draw_sunburst, draw_island, paste_watercolor,
 )
+
+def load_script(size: int) -> ImageFont.FreeTypeFont:
+    """Load Brush Script with Bradley Hand as fallback."""
+    for path in [
+        "/System/Library/Fonts/Supplemental/Brush Script.ttf",
+        "/System/Library/Fonts/Supplemental/Bradley Hand Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Apple Chancery.ttf",
+    ]:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+    return load_font(size, italic=True)
 
 # ---------------------------------------------------------------------------
 # Canvas constants
@@ -113,9 +127,9 @@ def build_front_label(key: str, cfg: dict) -> Image.Image:
     c    = cfg["colors"]
     s    = SAFE
 
-    f_kombucha = load_font(58, bold=True)
+    f_kombucha = load_font(120, bold=True)
     f_flavour  = load_font(70, bold=True)
-    f_tagline  = load_font(28, italic=True)
+    f_tagline  = load_script(36)
     f_qty      = load_font(26)
 
     cx = FRONT_W // 2
@@ -126,28 +140,31 @@ def build_front_label(key: str, cfg: dict) -> Image.Image:
     # --- 2. Logo image — scale to 55% of live width to leave room for KOMBUCHA ---
     logo         = Image.open(LOGO_PATH).convert("RGBA")
     logo_content = logo.crop(LOGO_CONTENT_BBOX)           # 1453 × 940 px
-    target_w     = int((FRONT_W - 2 * s) * 0.37)         # ~305 px (1/3 smaller)
+    target_w     = int((FRONT_W - 2 * s) * 0.30)         # ~248 px
     target_h     = int(target_w * logo_content.height / logo_content.width)
     logo_scaled  = logo_content.resize((target_w, target_h), Image.LANCZOS)
     logo_x       = (FRONT_W - target_w) // 2
-    logo_y       = s + 15
+    logo_y       = s + 40
     img.paste(logo_scaled, (logo_x, logo_y), mask=logo_scaled.split()[3])
     logo_bottom  = logo_y + target_h
 
-    # --- 3. KOMBUCHA text below logo ---
-    kom_text = "KOMBUCHA"
-    kom_w    = spaced_text_width(kom_text, f_kombucha, spacing=8)
-    kom_x    = cx - kom_w // 2
-    kom_y    = logo_bottom + 10
-    draw_spaced_text(draw, kom_x, kom_y, kom_text, f_kombucha, AMBER, spacing=8)
-    kom_bb      = f_kombucha.getbbox("A")
-    kom_bottom  = kom_y + (kom_bb[3] - kom_bb[1])
-
-    # --- 4. Watercolor illustration ---
+    # --- 3. KOMBUCHA text — centred in the gap between logo and watercolor ---
     band_height  = 95 + 38 + 20
     stripe_h     = 8
-    illus_top    = kom_bottom + 70
     illus_bottom = FRONT_H - s - stripe_h - band_height
+    gap_height   = 170                              # fixed space reserved between logo and watercolor
+    illus_top    = logo_bottom + gap_height
+
+    kom_text = "KOMBUCHA"
+    kom_bb   = f_kombucha.getbbox("A")
+    kom_h    = kom_bb[3] - kom_bb[1]
+    kom_w    = spaced_text_width(kom_text, f_kombucha, spacing=8)
+    kom_x    = cx - kom_w // 2
+    # Subtract kom_bb[1] so the visual top of the glyph (not the draw origin) is centred
+    kom_y    = logo_bottom + (gap_height - kom_h) // 2 - kom_bb[1]
+    draw_spaced_text(draw, kom_x, kom_y, kom_text, f_kombucha, AMBER, spacing=8)
+
+    # --- 4. Watercolor illustration ---
     paste_watercolor(img, cfg["watercolor"],
                      (s + 10, illus_top, FRONT_W - s - 10, illus_bottom))
 
@@ -165,7 +182,7 @@ def build_front_label(key: str, cfg: dict) -> Image.Image:
     tg_text = "Handcrafted in Madeira"
     tg_bb   = f_tagline.getbbox(tg_text)
     tg_x    = cx - (tg_bb[2] - tg_bb[0]) // 2
-    tg_y    = fn_y + 78
+    tg_y    = fn_y + 74
     draw.text((tg_x, tg_y), tg_text, font=f_tagline, fill="#FFEEBB")
 
     # --- 6. Bottom stripe ---
@@ -174,8 +191,8 @@ def build_front_label(key: str, cfg: dict) -> Image.Image:
     # --- 7. Net quantity ---
     qty_text = "250 ml e"
     qty_bb   = f_qty.getbbox(qty_text)
-    qty_x    = FRONT_W - s - (qty_bb[2] - qty_bb[0]) - 8
-    qty_y    = FRONT_H - s - stripe_h - (qty_bb[3] - qty_bb[1]) - 4
+    qty_x    = FRONT_W - s - (qty_bb[2] - qty_bb[0]) - 24
+    qty_y    = FRONT_H - s - stripe_h - (qty_bb[3] - qty_bb[1]) - 16
     draw.text((qty_x, qty_y), qty_text, font=f_qty, fill=BROWN)
 
     return img
