@@ -59,6 +59,7 @@ All coordinates within live area. Font sizes set to ensure physical x-height ≥
 
 1. **Flavour-colour stripe** — 6 px
 2. **Structured Water section**
+   - Small icon: `assets/water-colors/07-hexagonal-water.png` — cropped to ~40×40 px, placed left of the section title
    - Section title: `STRUCTURED WATER` — Georgia bold, 16 px / 5.5 pt, colour `#3D2B1F`
    - Body (16 px / 5.5 pt, colour `#444`): *Water filtered through activated carbon and structured using the UMH Pure Gold energiser — a technical conditioning process that restores the water's natural hexagonal molecular arrangement.*
    - ⚠️ **Legal note:** This text describes only the production process. It makes no health or functional benefit claim and is intended to be compliant with EC Regulation 1924/2006. Obtain sign-off from a food regulatory advisor before first print run.
@@ -135,7 +136,7 @@ Each illustration uses the flavour's light→mid→dark palette with layered tra
 
 ## AI Image Prompts (Midjourney / DALL-E 3)
 
-Generate image, save as `assets/watercolor/<flavour_key>.png`. Transparent background strongly preferred. The label script will alpha-composite the image over `#FFFDF8` before placing it in the illustration zone. If delivered as RGB, treat white as background.
+All watercolor images are present in `assets/water-colors/` as RGB PNGs (white background, 1024 px+). The label script crops and pastes them directly onto the cream label background — no alpha compositing needed. Scale to fit the illustration zone maintaining aspect ratio, centre-crop if needed. See the flavour→file mapping in the File Output Structure section.
 
 **Ginger:**
 > *Delicate watercolor illustration of a fresh ginger root, knobby and organic, warm cream and golden-yellow tones with small green leaf sprigs, white background, botanical art style, high detail, no text*
@@ -174,14 +175,26 @@ output/labels/
   green_mandarine_front.png
   green_mandarine_back.png
 
-assets/watercolor/          ← drop AI-generated images here to override PIL art
-  ginger.png
-  wild_orange.png
-  lime.png
-  turmeric_lemon.png
-  metabolic_boost.png
-  green_mandarine.png
+assets/water-colors/        ← actual watercolor images (already present)
+  01-ginger.png             1024×1024 RGB
+  02-wild-orange.png        1024×1024 RGB
+  03-green-mandarine.png    1024×1536 RGB
+  04-lemon-turmeric.png     1024×1024 RGB
+  05-meta-boost.png         1024×1536 RGB
+  06-lime.png               1024×1536 RGB
+  07-hexagonal-water.png    1024×1536 RGB  ← used as icon on back label
 ```
+
+**Flavour → image file mapping:**
+
+| Flavour key | Image file |
+|---|---|
+| ginger | `assets/water-colors/01-ginger.png` |
+| wild_orange | `assets/water-colors/02-wild-orange.png` |
+| green_mandarine | `assets/water-colors/03-green-mandarine.png` |
+| turmeric_lemon | `assets/water-colors/04-lemon-turmeric.png` |
+| metabolic_boost | `assets/water-colors/05-meta-boost.png` |
+| lime | `assets/water-colors/06-lime.png` |
 
 ---
 
