@@ -367,6 +367,41 @@ Edit `config/settings.yaml` to customize:
 **Q: Want to use different key points**
 - A: Edit `assets/{theme}/content.json` directly, or the system automatically uses random selection for variety.
 
+## Label Generation
+
+Generate print-ready bottle labels for all Real Health Kombucha flavours.
+
+### Run
+
+```bash
+python3 generate_labels.py
+```
+
+### Output
+
+Labels are saved to `output/labels/`:
+
+| File | Size | Description |
+|------|------|-------------|
+| `{flavour}_front.png` | 896 × 1133 px | Front label with logo, watercolor, and flavour band |
+| `{flavour}_back.png` | 896 × 956 px | Back label with ingredients, nutrition, and legal footer |
+
+Both at 300 DPI with 3 mm bleed. Flavours: `ginger`, `wild_orange`, `green_mandarine`, `turmeric_lemon`, `metabolic_boost`, `lime`.
+
+### Assets Required
+
+- `assets/design-logos/logo_transparent_highres.png` — brand logo
+- `assets/water-colors/01-ginger.png` … `06-lime.png` — per-flavour watercolor illustrations
+- `assets/water-colors/07-hexagonal-water.png` — icon for the back label structured-water section
+
+### Dependencies
+
+```bash
+pip install Pillow
+```
+
+No API keys or external services needed — runs fully offline.
+
 ## License
 
 Private project for Real Health Kombucha
