@@ -37,6 +37,8 @@ wheels/
 # Output files
 output/**/*
 !output/.gitkeep
+!output/labels/
+!output/labels/*
 
 # Assets (optional - uncomment if you don't want to track assets)
 assets/**/*
